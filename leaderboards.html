@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Leaderboards — OpenBricks</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="wrap" style="padding:40px 24px 80px">
+  <h1 class="page-title">Leaderboards</h1>
+  <p class="page-sub">The best collectors, fighters and richest ninjas across every server.</p>
+  <div class="tabs">
+    <button data-tab="collectors" class="on">🃏 Collectors</button>
+    <button data-tab="battle">⚔️ Battle season</button>
+    <button data-tab="rich">💰 Richest</button>
+  </div>
+  <div id="board"><div class="spinner"></div></div>
+</div>
+<script src="assets/config.js"></script>
+<script src="assets/common.js"></script>
+<script>
+  renderNav('lb'); renderFooter();
+  const COLS = {
+    collectors: [['Unique cards', (r) => fmt(r.unique_cards)], ['Total', (r) => fmt(r.total)], ['Specials', (r) => fmt(r.specials)]],
+    battle: [['Rating', (r) => fmt(r.rating)], ['W / L', (r) => `${r.wins} / ${r.losses}`]],
+    rich: [['OBCoins', (r) => fmt(r.coins)]],
+  };
+  let data = null, tab = 'collectors';
+  const draw = () => {
+    const rows = data[tab];
+    if (!rows.length) { $('#board').innerHTML = '<div class="empty">Nobody here yet. Be the first!</div>'; return; }
+    $('#board').innerHTML = `${tab === 'battle' ? `<p class="page-sub">Season ${esc(data.season)} · top 3 win coins, #1 gets the 👑 Champion sleeve.</p>` : ''}
+      <table class="lb"><thead><tr><th>#</th><th>Player</th>${COLS[tab].map(([h]) => `<th>${h}</th>`).join('')}</tr></thead><tbody>
+      ${rows.map((r, i) => `<tr><td class="pos">#${i + 1}</td><td><div class="who"><img src="${avatarUrl(r.userId, r.user?.avatar)}" alt="">${esc(r.user?.name || 'Unknown')}</div></td>${COLS[tab].map(([, f]) => `<td>${f(r)}</td>`).join('')}</tr>`).join('')}
+      </tbody></table>`;
+  };
+  document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => {
+    tab = b.dataset.tab; document.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === b)); if (data) draw();
+  }));
+  fetch(OB.API + '/api/leaderboards').then((r) => r.json()).then((d) => { data = d; draw(); })
+    .catch(() => { $('#board').innerHTML = '<div class="empty">Leaderboards are offline right now.</div>'; });
+</script>
+</body>
+</html>

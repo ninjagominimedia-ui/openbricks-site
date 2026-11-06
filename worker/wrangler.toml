@@ -1,0 +1,15 @@
+# OpenBricks website API. Deploy from this folder:  npx wrangler deploy
+# Secrets (never put them in this file):
+#   npx wrangler secret put DISCORD_CLIENT_SECRET
+#   npx wrangler secret put BOT_TOKEN
+#   npx wrangler secret put TURSO_URL
+#   npx wrangler secret put TURSO_TOKEN
+#   npx wrangler secret put SESSION_SECRET      (any long random text)
+name = "openbricks-api"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+DISCORD_CLIENT_ID = "1148315577014820904"
+# the GitHub Pages address of the site, no trailing slash
+SITE_URL = "https://ninjagominimedia-ui.github.io/openbricks-site"

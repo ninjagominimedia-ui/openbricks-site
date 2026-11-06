@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenBricks — the Ninjago card collecting Discord bot</title>
+<meta name="description" content="Catch Ninjago cards in your Discord server, open packs, pull rare Holo, Gold and Ghost versions, battle with elements and climb the ranks.">
+<meta property="og:title" content="OpenBricks — Ninjago card bot for Discord">
+<meta property="og:description" content="Catch cards, open packs, battle with elements, climb the leaderboards.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<section class="hero">
+  <div class="wrap">
+    <h1>Collect. Battle. <span>Master the elements.</span></h1>
+    <p>OpenBricks turns your Discord server into a Ninjago card game. Cards spawn while you chat, packs hide rare versions, and every card can fight.</p>
+    <div class="cta">
+      <a class="btn primary big" id="invite" target="_blank" rel="noopener">➕ Add to Discord</a>
+      <a class="btn ghost big" href="dashboard.html">Open Dashboard</a>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="s-servers">—</b><span>Servers</span></div>
+      <div class="stat"><b id="s-players">—</b><span>Players</span></div>
+      <div class="stat"><b id="s-caught">—</b><span>Cards caught</span></div>
+      <div class="stat"><b id="s-packs">—</b><span>Pack cards pulled</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt">
+  <div class="wrap">
+    <h2>Everything your server needs to stay alive</h2>
+    <p class="sub">One bot for collecting, gaming, economy and server tools. Set it all up from the dashboard.</p>
+    <div class="grid">
+      <div class="feature"><div class="ico">🃏</div><h3>Card spawns</h3><p>Cards appear as people chat. Type the name first to catch it. Wishlists, streaks and a full collection to finish.</p></div>
+      <div class="feature"><div class="ico">📦</div><h3>Packs &amp; special versions</h3><p>Open packs for Holo Foil, Gold, Shadow and Full Art pulls. Every copy has a serial number.</p></div>
+      <div class="feature"><div class="ico">⚔️</div><h3>Card battles</h3><p>Build a 3-card deck and fight. Fire beats Ice, Water beats Fire. Ranked seasons with prizes every month.</p></div>
+      <div class="feature"><div class="ico">💰</div><h3>Economy</h3><p>OBCoins, a vault bank with upgrades, a rotating shop, coinflips, loans and trading between players.</p></div>
+      <div class="feature"><div class="ico">🎮</div><h3>Games</h3><p>Episode, quote and minifigure guessers, quizzes, blackjack, mines, tic-tac-toe and more.</p></div>
+      <div class="feature"><div class="ico">🛠️</div><h3>Server tools</h3><p>Welcome and goodbye messages, logs, starboard, reaction roles and moderation, all from the dashboard.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap split">
+    <div>
+      <h3>Pull something nobody else has</h3>
+      <p>Special versions only exist in limited print runs. When the Ghost run is gone, it's gone forever.</p>
+      <div class="versions">
+        <span class="chip">🌈 Holo Foil · 250 made</span><span class="chip">🖼️ Full Art · 150</span><span class="chip">🥇 Gold · 100</span>
+        <span class="chip">🌑 Shadow · 50</span><span class="chip">👻 Ghost · 25</span>
+      </div>
+      <p style="margin-top:18px">👻 <b>Ghost cards only drop during a real full moon.</b> Check <code>!moon</code> to see when the next one starts.</p>
+    </div>
+    <div class="feature" style="padding:30px">
+      <h3>🎴 Card sleeves</h3>
+      <p>Frame your best cards with Dragon Scale, Frost, Neon Glow, Golden Weapon and more. Win the 👑 Season Champion sleeve by topping the battle ladder.</p>
+      <p style="margin-top:14px"><code>!sleeves</code> · <code>!flex kai holo</code></p>
+    </div>
+  </div>
+</section>
+
+<section class="section alt">
+  <div class="wrap">
+    <h2>Up and running in a minute</h2>
+    <p class="sub">No setup wizard, no premium wall.</p>
+    <div class="grid">
+      <div class="feature"><div class="ico">1</div><h3>Add OpenBricks</h3><p>Invite the bot to your server with the button above.</p></div>
+      <div class="feature"><div class="ico">2</div><h3>Pick a spawn channel</h3><p>Use <code>!setspawnchannel #channel</code> or choose it in the dashboard.</p></div>
+      <div class="feature"><div class="ico">3</div><h3>Start collecting</h3><p>Chat, catch, open packs and challenge your friends with <code>!battle</code>.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="ctabox">
+      <h2>Ready to become a Spinjitzu master?</h2>
+      <p class="sub" style="margin-bottom:26px">Free, forever. Bring OpenBricks to your server.</p>
+      <a class="btn primary big" id="invite2" target="_blank" rel="noopener">➕ Add to Discord</a>
+    </div>
+  </div>
+</section>
+
+<script src="assets/config.js"></script>
+<script src="assets/common.js"></script>
+<script>
+  renderNav('home'); renderFooter();
+  $('#invite').href = $('#invite2').href = OB.INVITE;
+  // counters from the bot's database (via the Worker); dashes stay if the API isn't set up yet
+  fetch(OB.API + '/api/stats').then((r) => r.json()).then((s) => {
+    const set = (id, v) => { if (v != null) $(id).textContent = fmt(v); };
+    set('#s-servers', s.servers); set('#s-players', s.players); set('#s-caught', s.cardsCaught); set('#s-packs', s.packCards);
+  }).catch(() => {});
+</script>
+</body>
+</html>
