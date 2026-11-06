@@ -25,8 +25,8 @@ export default {
     try {
       if (url.pathname === '/login') return login(env, url);
       if (url.pathname === '/callback') return await callback(env, url, req);
-      if (url.pathname === '/api/stats') return json(env, await publicStats(env), 300);
-      if (url.pathname === '/api/leaderboards') return json(env, await leaderboards(env), 120);
+      if (url.pathname === '/api/stats') return json(env, await cached('stats', 300e3, () => publicStats(env)), 300);
+      if (url.pathname === '/api/leaderboards') return json(env, await cached('lb', 120e3, () => leaderboards(env)), 120);
       const session = await readSession(env, req);
       if (!session) return json(env, { error: 'Not logged in' }, 0, 401);
       if (url.pathname === '/api/me') return json(env, await me(env, session));
@@ -42,6 +42,16 @@ export default {
 };
 
 // ---------------------------------------------------------------- helpers
+// Public endpoints use the bot's token for Discord lookups. Spamming them must not burn the bot's rate limit,
+// so their results are reused for a while (shared by every request one Worker instance serves).
+const memo = new Map(); // key -> { at, ttl, promise }
+function cached(key, ttl, make) {
+  const hit = memo.get(key);
+  if (hit && Date.now() - hit.at < ttl) return hit.promise;
+  const promise = make().catch((e) => { memo.delete(key); throw e; });
+  memo.set(key, { at: Date.now(), promise });
+  return promise;
+}
 function cors(env, res) {
   const h = new Headers(res.headers);
   h.set('Access-Control-Allow-Origin', new URL(env.SITE_URL).origin);
