@@ -54,6 +54,7 @@ async function route() {
     if (page === 'server' && id) return await serverPage(id);
     if (page === 'collection') return await collectionPage();
     if (page === 'admin' && isAdmin) return adminPage();
+    if (page === 'sus' && isAdmin) return susPage();
     return await serversPage();
   } catch (e) {
     if (e.status === 401) return loginScreen();
@@ -75,7 +76,7 @@ function shell(active, title, sub, body, side = '') {
       <div class="head"><img src="${avatarUrl(u.id, u.avatar)}" alt="">${esc(u.name)}</div>
       <a href="#/servers" class="${active === 'servers' ? 'on' : ''}">My servers</a>
       <a href="#/collection" class="${active === 'collection' ? 'on' : ''}">My collection</a>
-      ${isAdmin ? `<a href="#/admin" class="${active === 'admin' ? 'on' : ''}">Admin</a>` : ''}
+      ${isAdmin ? `<a href="#/admin" class="${active === 'admin' ? 'on' : ''}">Admin</a><a href="#/sus" class="${active === 'sus' ? 'on' : ''}">Sus users</a>` : ''}
       <a href="leaderboards.html">Leaderboards</a>${side}</aside>
     <main><h1 class="page-title">${title}</h1><p class="page-sub">${sub}</p>${body}</main></div>`;
 }
@@ -343,6 +344,50 @@ function adminPage() {
   // fill the server pickers in the background
   runJob('servers', {}, document.createElement('div')).then((r) => fillServers(r.data)).catch(() => {});
   loadLog();
+}
+
+// ---------------------------------------------------------------- sus users (bot owners): a saved list of user IDs,
+// where each one is, how much they talk there, and a bot-ban button. The list is stored by the bot, so every owner sees it.
+function susPage() {
+  shell('sus', 'Sus users', 'Paste user IDs (any format, up to 100). Shows which bot servers each one is in and how many messages they sent there. The list is saved for every bot owner.',
+    `<section class="panel"><textarea id="susids" rows="6" placeholder="One user ID per line"></textarea>
+      <p><button class="btn primary small" id="susgo" type="button">Save and check</button></p></section><div id="susout"></div>`);
+  const user = (u) => `<section class="panel" data-user="${u.id}">
+      <div class="toggle-row"><div style="display:flex;gap:12px;align-items:center"><img src="${avatarUrl(u.id, u.avatar)}" style="width:44px;height:44px;border-radius:50%" alt="">
+        <div><b>${esc(u.tag || 'Unknown user')}</b><span class="m">${u.id}${u.created ? ` · account made ${new Date(u.created).toLocaleDateString()} (${ago(u.created)} old)` : ''}</span></div></div>
+        ${u.banned ? '<span class="chip">Bot-banned</span>' : ''}</div>
+      ${u.servers.length ? `<table class="lb"><thead><tr><th>Server</th><th>Messages</th></tr></thead><tbody>${u.servers.map((g) => `<tr><td><a href="#/server/${g.id}">${esc(g.name)}</a></td><td>${fmt(g.messages)}</td></tr>`).join('')}</tbody></table>`
+        : '<div class="empty">Not in any server the bot is in.</div>'}
+      <p><button class="btn ${u.banned ? 'ghost' : 'danger'} small" type="button" data-ban="${u.id}" data-op="${u.banned ? 'unban' : 'ban'}">${u.banned ? 'Remove blacklist' : 'Blacklist'}</button></p><div class="out"></div></section>`;
+  const show = (d) => {
+    $('#susids').value = d.ids.join('\n');
+    const inAny = d.users.filter((u) => u.servers.length).length, banned = d.users.filter((u) => u.banned).length;
+    $('#susout').innerHTML = d.users.length ? `<p class="page-sub">${d.users.length} users · ${inAny} in at least one server · ${banned} bot-banned</p>${d.users.map(user).join('')}` : '<div class="empty">The list is empty.</div>';
+  };
+  const scan = async (params) => {
+    const out = $('#susout'), btn = $('#susgo');
+    btn.disabled = true;
+    try { show((await runJob('susscan', params, out)).data); } catch (e) { out.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
+    btn.disabled = false;
+  };
+  $('#susgo').onclick = () => scan({ userIds: $('#susids').value });
+  app.onclick = async (e) => {
+    const b = e.target.closest('[data-ban]');
+    if (!b) return;
+    const ban = b.dataset.op === 'ban';
+    if (ban && !confirm('Blacklist this user from the bot?')) return;
+    const out = b.closest('section').querySelector('.out');
+    b.disabled = true;
+    try {
+      const r = await runJob('botban', { userId: b.dataset.ban, op: b.dataset.op, reason: 'Sus users list' }, out);
+      out.innerHTML = `<p class="ok">${esc(r.text)}</p>`;
+      b.dataset.op = ban ? 'unban' : 'ban';
+      b.textContent = ban ? 'Remove blacklist' : 'Blacklist';
+      b.className = `btn ${ban ? 'ghost' : 'danger'} small`;
+    } catch (err) { out.innerHTML = `<p class="bad">${esc(err.message)}</p>`; }
+    b.disabled = false;
+  };
+  scan({}); // load the saved list
 }
 
 // ---------------------------------------------------------------- collection
