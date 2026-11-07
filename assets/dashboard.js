@@ -240,7 +240,10 @@ const ADMIN = [
   ] },
   { group: 'Players', items: [
     { action: 'userinfo', label: 'User info', fields: [F.user], render: (d) => `<div class="toggle-row"><div style="display:flex;gap:12px;align-items:center"><img src="${avatarUrl(d.id, d.avatar)}" style="width:44px;height:44px;border-radius:50%" alt=""><div><b>${esc(d.tag)}</b><span class="m">${d.id} · account made ${new Date(d.created).toLocaleDateString()}</span></div></div></div>
-      <div class="kpis">${[['OBCoins', fmt(d.coins)], ['Cards', fmt(d.cards)], ['Pack cards', fmt(d.packCards)], ['Bot-banned', d.blacklisted ? 'Yes' : 'No'], ['Jailed', d.jailedMs ? `${Math.ceil(d.jailedMs / 60000)}m` : 'No']].map(([k, v]) => `<div class="kpi"><b>${v}</b><span>${k}</span></div>`).join('')}</div>` },
+      <div class="kpis">${[['OBCoins', fmt(d.coins)], ['Cards', fmt(d.cards)], ['Pack cards', fmt(d.packCards)], ['Bot-banned', d.blacklisted ? 'Yes' : 'No'], ['Jailed', d.jailedMs ? `${Math.ceil(d.jailedMs / 60000)}m` : 'No']].map(([k, v]) => `<div class="kpi"><b>${v}</b><span>${k}</span></div>`).join('')}</div>
+      <p><b>Bot added to their account:</b> ${d.install ? `yes, first used ${new Date(d.install.first).toLocaleDateString()}, last used ${ago(d.install.last)}` : 'not seen (only shows once they use a command through it)'}</p>
+      <p><b>In ${(d.servers || []).length} of the bot's servers</b></p>
+      ${(d.servers || []).length ? `<ul class="why">${d.servers.map((s) => `<li><a href="#/server/${s.id}">${esc(s.name)}</a>${s.owner ? ' (owner)' : ''} <span class="m">joined ${s.joined ? new Date(s.joined).toLocaleDateString() : 'unknown'}</span></li>`).join('')}</ul>` : '<div class="empty">Not in any server the bot is in.</div>'}` },
     { action: 'coins', label: 'Manage coins', fields: [F.user, F.op(['add', 'remove']), F.amount] },
     { action: 'addcard', label: 'Add card', fields: [F.user, F.card, F.amount] },
     { action: 'removecard', label: 'Remove card', fields: [F.user, F.card, F.amount] },
