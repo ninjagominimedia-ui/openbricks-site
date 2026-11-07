@@ -196,7 +196,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .podium .p.mine { outline: 2px solid var(--accent); }
 .podium .crown { position: absolute; top: -22px; left: 50%; transform: translateX(-50%); font-size: 34px; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, .5)); }
 .podium .rank { color: var(--c); font-weight: 900; font-size: 13px; letter-spacing: .1em; margin-bottom: 10px; }
-.podium img { width: 64px; height: 64px; border-radius: 50%; border: 3px solid var(--c); }
+.podium img { display: block; margin: 0 auto; width: 64px; height: 64px; border-radius: 50%; border: 3px solid var(--c); }
 .podium .first img { width: 88px; height: 88px; }
 .podium .name { font-weight: 700; margin: 10px 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .podium .val { font-size: 24px; font-weight: 800; }
