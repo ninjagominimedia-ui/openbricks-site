@@ -12,4 +12,4 @@ compatibility_date = "2026-11-01"
 [vars]
 DISCORD_CLIENT_ID = "1148315577014820904"
 # the GitHub Pages address of the site, no trailing slash
-SITE_URL = "https://ninjagominimedia-ui.github.io/openbricks-site"
+SITE_URL = "https://open-bricks.site"
