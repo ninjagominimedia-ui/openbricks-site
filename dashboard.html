@@ -7,19 +7,19 @@
 <meta name="theme-color" content="#0d1017">
 <title>Dashboard — OpenBricks</title>
 <meta name="description" content="Manage OpenBricks in your Discord servers: card spawn channel, welcome messages, logs and moderation. See your card collection.">
-<link rel="stylesheet" href="assets/style.css?v=20261107h">
+<link rel="stylesheet" href="assets/style.css?v=20261107i">
 </head>
 <body>
 <div class="wrap" id="app"><div class="spinner"></div></div>
 <div class="savebar" id="savebar"><p>Careful — you have unsaved changes!</p><button class="btn ghost small" id="reset">Reset</button><button class="btn primary small" id="save">Save changes</button></div>
-<script src="assets/config.js?v=20261107h"></script>
-<script src="assets/common.js?v=20261107h"></script>
+<script src="assets/config.js?v=20261107i"></script>
+<script src="assets/common.js?v=20261107i"></script>
 <script>
   // a fresh login lands here as dashboard.html#session=<token>
   const h = new URLSearchParams(location.hash.slice(1));
   if (h.get('session')) { Session.set(h.get('session')); history.replaceState(null, '', 'dashboard.html#/servers'); }
   if (h.get('error')) { setTimeout(() => toast(h.get('error'), 'bad'), 300); history.replaceState(null, '', 'dashboard.html'); }
 </script>
-<script src="assets/dashboard.js?v=20261107h"></script>
+<script src="assets/dashboard.js?v=20261107i"></script>
 </body>
 </html>
