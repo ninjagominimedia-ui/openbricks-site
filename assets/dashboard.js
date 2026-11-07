@@ -42,10 +42,11 @@ async function route() {
   const [, page, id] = location.hash.split('/');
   app.innerHTML = '<div class="spinner"></div>';
   $('#savebar').classList.remove('show');
-  window.onbeforeunload = null; app.oninput = app.onchange = app.onclick = null; // handlers of the previous page
+  window.onbeforeunload = null; app.oninput = app.onchange = app.onclick = app.onsubmit = null; // handlers of the previous page
   try {
     if (page === 'server' && id) return await serverPage(id);
     if (page === 'collection') return await collectionPage();
+    if (page === 'admin' && Session.user.admin) return adminPage();
     return await serversPage();
   } catch (e) {
     if (e.status === 401) return loginScreen();
@@ -65,6 +66,7 @@ function shell(active, title, sub, body, side = '') {
       <div class="head"><img src="${avatarUrl(u.id, u.avatar)}" alt="">${esc(u.name)}</div>
       <a href="#/servers" class="${active === 'servers' ? 'on' : ''}">🖥️ My servers</a>
       <a href="#/collection" class="${active === 'collection' ? 'on' : ''}">🃏 My collection</a>
+      ${u.admin ? `<a href="#/admin" class="${active === 'admin' ? 'on' : ''}">🛠️ Admin</a>` : ''}
       <a href="leaderboards.html">🏆 Leaderboards</a>${side}</aside>
     <main><h1 class="page-title">${title}</h1><p class="page-sub">${sub}</p>${body}</main></div>`;
 }
@@ -201,6 +203,119 @@ function modWire(id, mod) {
       if (act === 'warn' || act === 'unwarn') showWarnings(id, uid, name);
     } catch (err) { toast(err.message, 'bad'); btn.disabled = false; }
   };
+}
+
+// ---------------------------------------------------------------- admin panel (bot owners; the Worker and the bot re-check every job)
+const F = {
+  user: { key: 'userId', label: 'User ID', ph: '123456789012345678' },
+  guild: { key: 'guildId', label: 'Server', ph: 'Server ID (pick from the list)', list: 'srvlist' },
+  channel: { key: 'channelId', label: 'Channel ID', ph: 'Channel ID' },
+  channelOpt: { key: 'channelId', label: 'Channel ID (optional)', ph: 'Empty = system channel', optional: true },
+  amount: { key: 'amount', label: 'Amount', type: 'number' },
+  qty: { key: 'amount', label: 'Quantity per user', type: 'number', optional: true, ph: '1' },
+  card: { key: 'card', label: 'Card name', ph: 'e.g. Lloyd' },
+  message: { key: 'message', label: 'Message', type: 'textarea' },
+  reason: { key: 'reason', label: 'Reason (for ban)', optional: true },
+  name: { key: 'name', label: 'Webhook name (optional)', optional: true, ph: 'Ninjago Bot Webhook' },
+  op: (opts) => ({ key: 'op', label: 'Action', type: 'select', options: opts }),
+  scope: { key: 'scope', label: 'Server ID or "all"', list: 'srvlist', ph: 'all' },
+  confirm: { key: 'confirm', label: 'Type RESET to confirm', ph: 'RESET' },
+};
+const ADMIN = [
+  { group: '🤖 Bot', items: [
+    { action: 'stats', label: 'Bot stats', render: (d) => `<div class="kpis">${[['Servers', d.servers], ['Members', d.members], ['Cards collected', d.cards], ['Collectors', d.collectors], ['Uptime', `${Math.floor(d.uptimeMin / 60)}h ${d.uptimeMin % 60}m`]].map(([k, v]) => `<div class="kpi"><b>${typeof v === 'number' ? fmt(v) : esc(v)}</b><span>${k}</span></div>`).join('')}</div><p class="page-sub">Largest: ${esc(d.largest)}</p>` },
+    { action: 'servers', label: 'Server list', render: (d) => `<div class="scroll">${d.map((g) => `<div class="toggle-row"><div><b>${esc(g.name)}</b><span class="m">${fmt(g.members)} members · ${g.id}</span></div></div>`).join('')}</div>` },
+    { action: 'reloadconfig', label: 'Reload cards.json' },
+    { action: 'exportdb', label: 'Export database', help: 'The bot DMs you the database file.' },
+    { action: 'restart', label: 'Restart bot', danger: 'Restart the bot now?' },
+    { action: 'shutdown', label: 'Shut down bot', danger: 'Shut the bot DOWN? It stays off until someone starts it again on the host.' },
+  ] },
+  { group: '👤 Players', items: [
+    { action: 'userinfo', label: 'User info', fields: [F.user], render: (d) => `<div class="toggle-row"><div style="display:flex;gap:12px;align-items:center"><img src="${avatarUrl(d.id, d.avatar)}" style="width:44px;height:44px;border-radius:50%" alt=""><div><b>${esc(d.tag)}</b><span class="m">${d.id} · account made ${new Date(d.created).toLocaleDateString()}</span></div></div></div>
+      <div class="kpis">${[['OBCoins', fmt(d.coins)], ['Cards', fmt(d.cards)], ['Pack cards', fmt(d.packCards)], ['Bot-banned', d.blacklisted ? '🚫 Yes' : 'No'], ['Jailed', d.jailedMs ? `🔒 ${Math.ceil(d.jailedMs / 60000)}m` : 'No']].map(([k, v]) => `<div class="kpi"><b>${v}</b><span>${k}</span></div>`).join('')}</div>` },
+    { action: 'coins', label: 'Manage coins', fields: [F.user, F.op(['add', 'remove']), F.amount] },
+    { action: 'addcard', label: 'Add card', fields: [F.user, F.card, F.amount] },
+    { action: 'removecard', label: 'Remove card', fields: [F.user, F.card, F.amount] },
+    { action: 'botban', label: 'Bot ban / unban', fields: [F.user, F.op(['ban', 'unban']), F.reason] },
+    { action: 'dm', label: 'DM a user', fields: [F.user, F.message] },
+  ] },
+  { group: '🖥️ Servers', items: [
+    { action: 'invite', label: 'Generate invite', fields: [F.guild, F.channelOpt] },
+    { action: 'announce', label: 'Server announcement', fields: [F.guild, F.channelOpt, F.message] },
+    { action: 'webhook', label: 'Create webhook', fields: [F.guild, F.channel, F.name], render: (d) => `<p>Webhook URL (keep it secret):</p><code class="secret">${esc(d.url)}</code>` },
+    { action: 'leave', label: 'Leave server', fields: [F.guild], danger: 'Make the bot LEAVE this server?' },
+  ] },
+  { group: '🌍 Everyone', items: [
+    { action: 'globalannounce', label: 'Global announcement', fields: [F.message], danger: 'Post this in EVERY server the bot is in?' },
+    { action: 'broadcast', label: 'Broadcast DM to all users', fields: [F.message], danger: 'DM this to EVERY user of the bot? This takes a while.' },
+    { action: 'giveaway', label: 'Mass giveaway', fields: [F.card, F.qty], danger: 'Give this card to EVERY collector?' },
+    { action: 'resetlb', label: 'Reset leaderboard', fields: [F.scope, F.confirm], danger: 'This DELETES card data and can\'t be undone. Continue?' },
+  ] },
+];
+
+// queue a job, then wait for the bot to finish it
+async function runJob(action, params, out) {
+  out.className = 'out'; out.innerHTML = '<div class="spinner"></div>';
+  const { id } = await api('/api/admin/jobs', { method: 'POST', body: JSON.stringify({ action, params }) });
+  for (let i = 0; i < 400; i++) { // up to ~10 minutes, broadcasts are slow
+    await new Promise((r) => setTimeout(r, i < 10 ? 1000 : 1500));
+    const j = await api(`/api/admin/jobs/${id}`);
+    if (j.status === 'pending' && i === 10) out.innerHTML = '<div class="spinner"></div><p class="page-sub">Waiting for the bot... is it online?</p>';
+    if (j.status === 'running' && i === 10) out.innerHTML = '<div class="spinner"></div><p class="page-sub">The bot is working on it...</p>';
+    if (j.status === 'expired') throw new Error('The bot was offline, so this was cancelled.');
+    if (j.status === 'error') throw new Error(j.result?.text || 'Failed');
+    if (j.status === 'done') return j.result;
+  }
+  throw new Error('Still running. Check "Recent admin actions" later.');
+}
+
+function adminPage() {
+  const field = (f, a) => {
+    const id = `${a.action}-${f.key}`, ph = f.ph ? `placeholder="${esc(f.ph)}"` : '';
+    const input = f.type === 'textarea' ? `<textarea id="${id}" maxlength="2000" ${ph}></textarea>`
+      : f.type === 'select' ? `<select id="${id}">${f.options.map((o) => `<option>${o}</option>`).join('')}</select>`
+        : `<input id="${id}" ${f.type === 'number' ? 'type="number" min="1"' : ''} ${f.list ? `list="${f.list}"` : ''} ${ph} autocomplete="off">`;
+    return `<div class="field" ${f.type === 'textarea' ? 'style="grid-column:1/-1"' : ''}><label>${f.label}</label>${input}</div>`;
+  };
+  const card = (a) => `<form class="panel admin-item" data-action="${a.action}"><h3>${a.label}</h3>${a.help ? `<p class="desc">${a.help}</p>` : ''}
+    ${a.fields?.length ? `<div class="fields">${a.fields.map((f) => field(f, a)).join('')}</div>` : ''}
+    <button class="btn ${a.danger ? 'danger' : 'primary'} small" type="submit">${a.danger ? '⚠️ ' : ''}${a.label}</button><div class="out"></div></form>`;
+  shell('admin', '🛠️ Admin panel', 'Bot owners only. Same actions as <code>/admin</code> in Discord. The bot does each one within a few seconds and logs it.',
+    `<datalist id="srvlist"><option value="all">ALL servers</option></datalist>
+    ${ADMIN.map((g) => `<h2 class="admin-group">${g.group}</h2><div class="admin-grid">${g.items.map(card).join('')}</div>`).join('')}
+    <section class="panel"><h3>📜 Recent admin actions <button class="btn ghost small" id="relog" type="button">Refresh</button></h3><div id="adminlog"><div class="spinner"></div></div></section>`);
+
+  const loadLog = async () => {
+    try {
+      const rows = await api('/api/admin/log');
+      $('#adminlog').innerHTML = rows.length ? rows.map((r) => `<div class="toggle-row"><div><b>${{ done: '✅', error: '❌', expired: '⌛', pending: '⏳', running: '⚙️' }[r.status] || ''} ${esc(r.action)}</b><span class="m">${esc(r.text)} · by ${esc(r.adminId)}</span></div><span class="chip">${new Date(r.createdAt).toLocaleString()}</span></div>`).join('') : '<div class="empty">Nothing yet.</div>';
+    } catch (e) { $('#adminlog').innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+  };
+  $('#relog').onclick = loadLog;
+  app.onsubmit = async (e) => {
+    e.preventDefault();
+    const form = e.target.closest('[data-action]'), a = ADMIN.flatMap((g) => g.items).find((x) => x.action === form.dataset.action);
+    const params = {};
+    for (const f of a.fields || []) {
+      const v = $(`#${a.action}-${f.key}`).value.trim();
+      if (!v && !f.optional) return toast(`Fill in: ${f.label}`, 'bad');
+      if (v) params[f.key] = v;
+    }
+    if (a.danger && !confirm(a.danger)) return;
+    const btn = form.querySelector('button[type=submit]'), out = form.querySelector('.out');
+    btn.disabled = true;
+    try {
+      const res = await runJob(a.action, params, out);
+      out.innerHTML = `<p class="ok">✅ ${esc(res.text)}</p>${a.render && res.data ? a.render(res.data) : ''}`;
+      if (a.action === 'servers') fillServers(res.data);
+      loadLog();
+    } catch (err) { out.innerHTML = `<p class="bad">❌ ${esc(err.message)}</p>`; }
+    btn.disabled = false;
+  };
+  const fillServers = (list) => { $('#srvlist').innerHTML = `<option value="all">ALL servers</option>${list.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}`; };
+  // fill the server pickers in the background
+  runJob('servers', {}, document.createElement('div')).then((r) => fillServers(r.data)).catch(() => {});
+  loadLog();
 }
 
 // ---------------------------------------------------------------- collection

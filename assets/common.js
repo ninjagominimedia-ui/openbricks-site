@@ -10,7 +10,7 @@ const guildIcon = (id, hash, size = 128) => (hash ? `https://cdn.discordapp.com/
 const Session = {
   get token() { return localStorage.getItem('ob_session'); },
   get user() {
-    try { const p = JSON.parse(atob(this.token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); return p.exp > Date.now() ? { id: p.uid, name: p.name, avatar: p.avatar } : null; }
+    try { const p = JSON.parse(atob(this.token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); return p.exp > Date.now() ? { id: p.uid, name: p.name, avatar: p.avatar, admin: !!p.admin } : null; }
     catch { return null; }
   },
   set(t) { localStorage.setItem('ob_session', t); },

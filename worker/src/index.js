@@ -11,6 +11,9 @@
 //   GET  /api/guilds/:id/mod        -> your mod permissions, bans, recent mod actions
 //   POST /api/guilds/:id/mod        -> ban / unban / kick / timeout / untimeout / warn / unwarn
 //   GET  /api/guilds/:id/warnings/:userId
+//   POST /api/admin/jobs            -> bot owners only: queue an /admin action for the bot (commands/modules/webadmin.js)
+//   GET  /api/admin/jobs/:id        -> status + result of your job
+//   GET  /api/admin/log             -> last 40 website admin actions
 //   GET  /api/collection            -> your pack cards, deck, battle rank, sleeves
 //   GET  /api/leaderboards          -> public top lists
 //   GET  /api/stats                 -> public counters for the home page
@@ -38,6 +41,10 @@ export default {
       const g = url.pathname.match(/^\/api\/guilds\/(\d{17,20})$/);
       if (g && req.method === 'GET') return json(env, await guildSettings(env, session, g[1]));
       if (g && req.method === 'PUT') return json(env, await saveGuild(env, session, g[1], await req.json()));
+      if (url.pathname === '/api/admin/jobs' && req.method === 'POST') return json(env, await adminQueue(env, session, await req.json()));
+      if (url.pathname === '/api/admin/log') return json(env, await adminLog(env, session));
+      const job = url.pathname.match(/^\/api\/admin\/jobs\/(\d+)$/);
+      if (job) return json(env, await adminJob(env, session, Number(job[1])));
       const m = url.pathname.match(/^\/api\/guilds\/(\d{17,20})\/(members|mod|warnings\/(\d{17,20}))$/);
       if (m && m[2] === 'members') return json(env, await findMembers(env, session, m[1], url.searchParams.get('q')));
       if (m && m[2] === 'mod' && req.method === 'GET') return json(env, await modOverview(env, session, m[1]));
@@ -148,6 +155,7 @@ async function callback(env, url, req) {
   const user = await discord('/users/@me', `Bearer ${tok.access_token}`);
   const session = await sign(env, {
     uid: user.id, name: user.global_name || user.username, avatar: user.avatar,
+    admin: await isBotOwner(env, user.id).catch(() => false), // only shows the Admin tab; every admin request re-checks
     at: tok.access_token, exp: Date.now() + Math.min(SESSION_DAYS * 864e5, (tok.expires_in || 604800) * 1000),
   });
   return new Response(null, { status: 302, headers: { Location: `${env.SITE_URL}/dashboard.html#session=${session}`, 'Set-Cookie': 'ob_state=; Path=/; Max-Age=0' } });
@@ -352,6 +360,44 @@ async function modAction(env, s, id, body) {
     await record(env, id, s.uid, uid, 'Unwarn', `Removed warning #${w.id}`);
   }
   return { ok: true };
+}
+
+// ---------------------------------------------------------------- admin panel (bot owners only)
+// The bot publishes its owner list (config.authorizedAdmins) in kv webadmin:owners and runs the queued jobs itself.
+const ADMIN_ACTIONS = new Set(['stats', 'servers', 'invite', 'leave', 'announce', 'webhook', 'userinfo', 'coins', 'addcard', 'removecard',
+  'giveaway', 'botban', 'dm', 'broadcast', 'globalannounce', 'resetlb', 'exportdb', 'reloadconfig', 'restart', 'shutdown']);
+let ownersCache = { at: 0, ids: [] };
+async function isBotOwner(env, uid) {
+  if (Date.now() - ownersCache.at > 60e3) {
+    const [r] = await one(env, "SELECT value FROM kv_store WHERE key='webadmin:owners'").catch(() => []);
+    let ids = [];
+    try { ids = r ? JSON.parse(r.value) : []; } catch { /* broken value = nobody */ }
+    ownersCache = { at: Date.now(), ids: Array.isArray(ids) ? ids.map(String) : [] };
+  }
+  return ownersCache.ids.includes(String(uid));
+}
+async function requireOwner(env, s) { if (!(await isBotOwner(env, s.uid))) throw fail(403, 'Bot owners only'); }
+async function adminQueue(env, s, body) {
+  await requireOwner(env, s);
+  const action = String(body.action || '');
+  if (!ADMIN_ACTIONS.has(action)) throw fail(400, 'Unknown action');
+  const params = JSON.stringify(body.params && typeof body.params === 'object' ? body.params : {});
+  if (params.length > 8000) throw fail(400, 'Too long');
+  const [row] = await one(env, 'INSERT INTO web_admin_jobs (adminId, action, params, status, createdAt) VALUES (?,?,?,?,?) RETURNING id',
+    [s.uid, action, params, 'pending', Date.now()]).catch((e) => { throw /no such table/i.test(e.message) ? fail(503, 'The bot hasn\'t started with the admin panel code yet') : e; });
+  return { id: row.id };
+}
+async function adminJob(env, s, id) {
+  await requireOwner(env, s);
+  const [j] = await one(env, 'SELECT id, action, status, result, createdAt, doneAt FROM web_admin_jobs WHERE id=? AND adminId=?', [id, s.uid]);
+  if (!j) throw fail(404, 'Job not found');
+  return { ...j, result: j.result ? JSON.parse(j.result) : null };
+}
+async function adminLog(env, s) {
+  await requireOwner(env, s);
+  const rows = await one(env, 'SELECT id, adminId, action, status, result, createdAt FROM web_admin_jobs ORDER BY id DESC LIMIT 40').catch(() => []);
+  // other admins' results stay short and never include data (webhook URLs etc.)
+  return rows.map((r) => { let text = ''; try { text = JSON.parse(r.result || '{}').text || ''; } catch { /* ignore */ } return { ...r, result: undefined, text: String(text).slice(0, 200) }; });
 }
 
 // ---------------------------------------------------------------- collection + leaderboards
