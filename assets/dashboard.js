@@ -81,11 +81,11 @@ async function serversPage() {
     const icon = guildIcon(g.id, g.icon);
     return `<div class="server"><div class="bannerwrap"><div class="banner" style="background-image:url('${icon}');${icon ? '' : 'background:var(--card2)'}"></div></div>
       <div class="icon">${icon ? `<img src="${icon}" alt="">` : esc(g.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 3))}</div>
-      <h4 title="${esc(g.name)}">${esc(g.name)}</h4>
+      <h4 title="${esc(g.name)}">${esc(g.name)}</h4>${g.viaOwner ? '<span class="chip" title="You can manage this server because you are a bot owner">👑 bot owner access</span>' : ''}
       ${g.botIn ? `<a class="btn primary small" href="#/server/${g.id}">Manage</a>`
         : `<a class="btn ghost small" target="_blank" rel="noopener" href="${me.inviteUrl}&guild_id=${g.id}&disable_guild_select=true">Add OpenBricks</a>`}</div>`;
   };
-  shell('servers', 'Select a server', 'Servers where you have <b>Manage Server</b>.',
+  shell('servers', 'Select a server', me.admin ? 'Your servers, plus <b>every server OpenBricks is in</b> (👑 bot owner access).' : 'Servers where you have <b>Manage Server</b>.',
     me.guilds.length ? `<div class="servers">${me.guilds.map(card).join('')}</div>` : '<div class="empty">You don\'t manage any servers. Ask a server owner for Manage Server permission.</div>');
 }
 

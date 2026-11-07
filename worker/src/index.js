@@ -176,14 +176,15 @@ async function callback(env, url, req) {
 }
 
 // ---------------------------------------------------------------- servers
-let botGuildCache = { at: 0, ids: new Set() };
+let botGuildCache = { at: 0, ids: new Map() };
+// -> Map of every server the bot is in: id -> { id, name, icon }
 async function botGuildIds(env) {
   if (Date.now() - botGuildCache.at < 60e3) return botGuildCache.ids;
-  const ids = new Set();
+  const ids = new Map();
   let after = '0';
   for (let page = 0; page < 10; page++) { // up to 2000 servers
     const list = await discord(`/users/@me/guilds?limit=200&after=${after}`, botAuth(env));
-    list.forEach((g) => ids.add(g.id));
+    list.forEach((g) => ids.set(g.id, { id: g.id, name: g.name, icon: g.icon }));
     if (list.length < 200) break;
     after = list[list.length - 1].id;
   }
@@ -203,15 +204,22 @@ function userGuilds(s) {
 }
 const canManage = (g) => g.owner || (BigInt(g.permissions) & (MANAGE_GUILD | ADMINISTRATOR)) !== 0n;
 async function me(env, s) {
-  const [guilds, botIds] = await Promise.all([userGuilds(s), botGuildIds(env)]);
+  const [guilds, botIds, owner] = await Promise.all([userGuilds(s), botGuildIds(env), isBotOwner(env, s.uid)]);
+  const list = guilds.filter(canManage).map((g) => ({ id: g.id, name: g.name, icon: g.icon, botIn: botIds.has(g.id) }));
+  // bot owners manage every server the bot is in, not only their own
+  if (owner) { const mine = new Set(list.map((g) => g.id)); for (const g of botIds.values()) if (!mine.has(g.id)) list.push({ ...g, botIn: true, viaOwner: true }); }
   return {
-    user: { id: s.uid, name: s.name, avatar: s.avatar },
-    guilds: guilds.filter(canManage).map((g) => ({ id: g.id, name: g.name, icon: g.icon, botIn: botIds.has(g.id) }))
-      .sort((a, b) => (b.botIn - a.botIn) || a.name.localeCompare(b.name)),
+    user: { id: s.uid, name: s.name, avatar: s.avatar }, admin: owner,
+    guilds: list.sort((a, b) => (b.botIn - a.botIn) || (a.viaOwner || 0) - (b.viaOwner || 0) || a.name.localeCompare(b.name)),
     inviteUrl: `https://discord.com/oauth2/authorize?client_id=${env.DISCORD_CLIENT_ID}&permissions=1512634182855&scope=bot%20applications.commands`,
   };
 }
 async function requireManage(env, s, guildId) {
+  if (await isBotOwner(env, s.uid)) { // bot owners: every server the bot is in, with every permission
+    const bg = (await botGuildIds(env)).get(guildId);
+    if (!bg) throw fail(404, 'OpenBricks is not in that server');
+    return { ...bg, owner: true, botOwner: true };
+  }
   const g = (await userGuilds(s)).find((x) => x.id === guildId);
   if (!g || !canManage(g)) throw fail(403, 'You need Manage Server in that server');
   if (!(await botGuildIds(env)).has(guildId)) throw fail(404, 'OpenBricks is not in that server');
@@ -348,7 +356,7 @@ async function modAction(env, s, id, body) {
   if (action !== 'unban') {
     const target = await discord(`/guilds/${id}/members/${uid}`, botAuth(env)).catch(() => null);
     if (!target && action !== 'unwarn') throw fail(404, 'That user is not in this server.');
-    if (target) await checkRank(env, id, s.uid, target);
+    if (target && !g.botOwner) await checkRank(env, id, s.uid, target); // bot owners skip the role check, like in the bot (Discord still stops the bot acting above its own role)
   }
   if (action === 'ban') {
     await dmUser(env, uid, `🔨 You were banned from **${g.name}**: ${reason}`);
