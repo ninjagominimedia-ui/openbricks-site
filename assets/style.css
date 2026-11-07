@@ -257,7 +257,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .doc h1 { font-size: 46px; margin: 0 0 6px; }
 .doc .updated { color: var(--mute); margin-bottom: 26px; }
 .doc section { padding: 18px 0; border-top: 1px solid var(--line); }
-.doc h2 { font: 700 19px "Segoe UI", system-ui, sans-serif; letter-spacing: 0; margin: 0 0 8px; } .doc h2 b { color: var(--accent2); margin-right: 10px; }
+.doc h2 { font: 700 19px "Segoe UI", system-ui, sans-serif; letter-spacing: 0; word-spacing: normal; margin: 0 0 8px; } .doc h2 b { color: var(--accent2); margin-right: 10px; }
 .doc p, .doc li { color: #cfc8bc; }
 .doc a { color: var(--accent2); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
 .doc code { overflow-wrap: anywhere; }
@@ -285,3 +285,11 @@ code.secret { display: block; padding: 10px; word-break: break-all; user-select:
   .btn.big { width: 100%; }
   .kpi { border-right: 0; border-bottom: 1px solid var(--line); }
 }
+.admin-grid .wide { grid-column: 1 / -1; }
+.verdict { padding: 10px 14px; border-left: 4px solid var(--mute); background: var(--card2); }
+.verdict.bad { border-color: var(--bad); } .verdict.warn { border-color: var(--accent2); } .verdict.ok { border-color: var(--ok); }
+.verdict a { color: var(--accent2); text-decoration: underline; }
+.lb.rs td { vertical-align: top; }
+.lb.rs .m { display: block; color: var(--mute); font-size: 13px; }
+.why { margin: 0; padding-left: 16px; color: var(--mute); font-size: 14px; }
+.out .verdict { color: var(--text); }

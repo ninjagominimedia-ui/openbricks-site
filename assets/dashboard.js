@@ -226,6 +226,8 @@ const F = {
   scope: { key: 'scope', label: 'Server ID or "all"', list: 'srvlist', ph: 'all' },
   confirm: { key: 'confirm', label: 'Type RESET to confirm', ph: 'RESET' },
 };
+// '3h' / '12d' / '5mo' since a timestamp
+const ago = (ts) => { const d = (Date.now() - ts) / 864e5; return d < 1 ? `${Math.max(0, Math.round(d * 24))}h` : d < 60 ? `${Math.round(d)}d` : `${Math.round(d / 30)}mo`; };
 const ADMIN = [
   { group: 'Bot', items: [
     { action: 'stats', label: 'Bot stats', render: (d) => `<div class="kpis">${[['Servers', d.servers], ['Members', d.members], ['Cards collected', d.cards], ['Collectors', d.collectors], ['Uptime', `${Math.floor(d.uptimeMin / 60)}h ${d.uptimeMin % 60}m`]].map(([k, v]) => `<div class="kpi"><b>${typeof v === 'number' ? fmt(v) : esc(v)}</b><span>${k}</span></div>`).join('')}</div><p class="page-sub">Largest: ${esc(d.largest)}</p>` },
@@ -244,6 +246,13 @@ const ADMIN = [
     { action: 'removecard', label: 'Remove card', fields: [F.user, F.card, F.amount] },
     { action: 'botban', label: 'Bot ban / unban', fields: [F.user, F.op(['ban', 'unban']), F.reason] },
     { action: 'dm', label: 'DM a user', fields: [F.user, F.message] },
+  ] },
+  { group: 'Security', items: [
+    { action: 'raidscan', wide: true, label: 'Raid / alt scan', fields: [F.guild, { key: 'hours', label: 'Only members who joined in the last ... hours (empty = everyone)', optional: true, ph: '72' }],
+      help: 'Flags accounts created close together, join waves, look-alike names, the same profile picture, and links to bot-banned users (linked alts, trades, joining right after them, similar names). Discord does not show bots anyone\'s friends, follows or bio.',
+      render: (d) => `<p class="verdict ${d.verdict === 'Looks like a raid' ? 'bad' : d.verdict === 'Nothing unusual' ? 'ok' : 'warn'}"><b>${esc(d.verdict)}</b> · ${fmt(d.scanned)} members scanned${d.hours ? ` (joined in the last ${d.hours}h)` : ''} · ${d.newShare}% had accounts under a week old · <a href="#/server/${d.guildId}">open this server's moderation</a></p>
+        ${d.suspects.length ? `<table class="lb rs"><thead><tr><th>Score</th><th>Member</th><th class="hide-sm">Account age</th><th>Why</th></tr></thead><tbody>${d.suspects.map((s) => `<tr><td class="pos">${s.score}</td><td><div class="who"><img src="${avatarUrl(s.id, s.avatar)}" alt="">${esc(s.tag)}</div><span class="m">${esc(s.name)} · ${s.id}</span></td><td class="hide-sm">${ago(s.created)}</td><td><ul class="why">${s.why.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></td></tr>`).join('')}</tbody></table>` : '<div class="empty">No suspicious accounts.</div>'}
+        ${d.clusters.length ? `<h4 style="margin:20px 0 6px">Groups</h4>${d.clusters.map((c) => `<div class="toggle-row"><div><b>${esc(c.type)} (${c.members.length})</b><span class="m">${c.members.map((m) => esc(m.tag)).join(', ')}</span></div></div>`).join('')}` : ''}` },
   ] },
   { group: 'Servers', items: [
     { action: 'invite', label: 'Generate invite', fields: [F.guild, F.channelOpt] },
@@ -283,7 +292,7 @@ function adminPage() {
         : `<input id="${id}" ${f.type === 'number' ? 'type="number" min="1"' : ''} ${f.list ? `list="${f.list}"` : ''} ${ph} autocomplete="off">`;
     return `<div class="field" ${f.type === 'textarea' ? 'style="grid-column:1/-1"' : ''}><label>${f.label}</label>${input}</div>`;
   };
-  const card = (a) => `<form class="panel admin-item" data-action="${a.action}"><h3>${a.label}</h3>${a.help ? `<p class="desc">${a.help}</p>` : ''}
+  const card = (a) => `<form class="panel admin-item${a.wide ? ' wide' : ''}" data-action="${a.action}"><h3>${a.label}</h3>${a.help ? `<p class="desc">${a.help}</p>` : ''}
     ${a.fields?.length ? `<div class="fields">${a.fields.map((f) => field(f, a)).join('')}</div>` : ''}
     <button class="btn ${a.danger ? 'danger' : 'primary'} small" type="submit">${a.label}</button><div class="out"></div></form>`;
   shell('admin', 'Admin panel', 'Bot owners only. Same actions as <code>/admin</code> in Discord. The bot does each one within a few seconds and logs it.',
