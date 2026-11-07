@@ -37,12 +37,13 @@ export default {
       const session = await readSession(env, req);
       if (!session) return json(env, { error: 'Not logged in' }, 0, 401);
       if (url.pathname === '/api/me') return json(env, await me(env, session));
+      if (url.pathname === '/api/whoami') return json(env, { admin: await isBotOwner(env, session.uid) }); // no Discord call: cheap
       if (url.pathname === '/api/collection') return json(env, await collection(env, session));
+      // these use the bot's token or queue bot work: cap them per person so nobody can get the bot rate-limited
+      if (url.pathname.startsWith('/api/guilds/') || (url.pathname === '/api/admin/jobs' && req.method === 'POST')) rateLimit(session.uid);
       const g = url.pathname.match(/^\/api\/guilds\/(\d{17,20})$/);
       if (g && req.method === 'GET') return json(env, await guildSettings(env, session, g[1]));
       if (g && req.method === 'PUT') return json(env, await saveGuild(env, session, g[1], await req.json()));
-      // these use the bot's token or queue bot work: cap them per person so nobody can get the bot rate-limited
-      if (url.pathname.startsWith('/api/guilds/') || (url.pathname === '/api/admin/jobs' && req.method === 'POST')) rateLimit(session.uid);
       if (url.pathname === '/api/admin/jobs' && req.method === 'POST') return json(env, await adminQueue(env, session, await req.json()));
       if (url.pathname === '/api/admin/log') return json(env, await adminLog(env, session));
       const job = url.pathname.match(/^\/api\/admin\/jobs\/(\d+)$/);
@@ -115,8 +116,12 @@ async function verify(env, token) {
 }
 const readSession = (env, req) => verify(env, (req.headers.get('Authorization') || '').replace(/^Bearer /, ''));
 
-async function discord(path, auth, init = {}) {
+async function discord(path, auth, init = {}, retry = true) {
   const res = await fetch(DISCORD + path, { ...init, headers: { Authorization: auth, ...(init.headers || {}) } });
+  if (res.status === 429 && retry) { // rate limited: wait what Discord asks (if short) and try once more
+    const wait = Number((await res.json().catch(() => ({}))).retry_after) || 1;
+    if (wait <= 5) { await new Promise((r) => setTimeout(r, wait * 1000 + 150)); return discord(path, auth, init, false); }
+  }
   if (res.status === 401) throw fail(401, 'Discord login expired, log in again');
   if (!res.ok) throw fail(502, `Discord ${res.status} on ${path}`);
   return res.json();
@@ -185,9 +190,20 @@ async function botGuildIds(env) {
   botGuildCache = { at: Date.now(), ids };
   return ids;
 }
+// Discord allows each person only ~1 "my servers" request per second, and a server page needs it 2-3 times at once:
+// share one answer per login for 30s (also means losing Manage Server takes up to 30s to apply)
+const userGuildCache = new Map(); // access token -> { at, promise }
+function userGuilds(s) {
+  const hit = userGuildCache.get(s.at);
+  if (hit && Date.now() - hit.at < 30e3) return hit.promise;
+  const promise = discord('/users/@me/guilds', `Bearer ${s.at}`).catch((e) => { userGuildCache.delete(s.at); throw e; });
+  if (userGuildCache.size > 2000) userGuildCache.clear();
+  userGuildCache.set(s.at, { at: Date.now(), promise });
+  return promise;
+}
 const canManage = (g) => g.owner || (BigInt(g.permissions) & (MANAGE_GUILD | ADMINISTRATOR)) !== 0n;
 async function me(env, s) {
-  const [guilds, botIds] = await Promise.all([discord('/users/@me/guilds', `Bearer ${s.at}`), botGuildIds(env)]);
+  const [guilds, botIds] = await Promise.all([userGuilds(s), botGuildIds(env)]);
   return {
     user: { id: s.uid, name: s.name, avatar: s.avatar },
     guilds: guilds.filter(canManage).map((g) => ({ id: g.id, name: g.name, icon: g.icon, botIn: botIds.has(g.id) }))
@@ -196,7 +212,7 @@ async function me(env, s) {
   };
 }
 async function requireManage(env, s, guildId) {
-  const g = (await discord('/users/@me/guilds', `Bearer ${s.at}`)).find((x) => x.id === guildId);
+  const g = (await userGuilds(s)).find((x) => x.id === guildId);
   if (!g || !canManage(g)) throw fail(403, 'You need Manage Server in that server');
   if (!(await botGuildIds(env)).has(guildId)) throw fail(404, 'OpenBricks is not in that server');
   return g;

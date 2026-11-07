@@ -34,11 +34,14 @@ const MODULES = [
 const SLEEVE_NAMES = { ninja: '🥷 Ninja Black', dragon: '🐉 Dragon Scale', ice: '❄️ Frost', neon: '💜 Neon Glow', gold: '🏆 Golden Weapon', jade: '🟢 Jade Temple', champion: '👑 Season Champion' };
 const VERSION = { holo: ['🌈', 'Holo Foil', 250], fullart: ['🖼️', 'Full Art', 150], gold: ['🥇', 'Gold', 100], shadow: ['🌑', 'Shadow', 50], ghost: ['👻', 'Ghost', 25] };
 
+let isAdmin = null;
 window.addEventListener('hashchange', route);
 route();
 
 async function route() {
   if (!Session.user) return loginScreen();
+  // ask the server (not the login token) whether to show the Admin tab; the server re-checks every admin action anyway
+  if (isAdmin === null) isAdmin = await api('/api/whoami').then((r) => !!r.admin).catch(() => false);
   const [, page, id] = location.hash.split('/');
   app.innerHTML = '<div class="spinner"></div>';
   $('#savebar').classList.remove('show');
@@ -46,7 +49,7 @@ async function route() {
   try {
     if (page === 'server' && id) return await serverPage(id);
     if (page === 'collection') return await collectionPage();
-    if (page === 'admin' && Session.user.admin) return adminPage();
+    if (page === 'admin' && isAdmin) return adminPage();
     return await serversPage();
   } catch (e) {
     if (e.status === 401) return loginScreen();
@@ -66,7 +69,7 @@ function shell(active, title, sub, body, side = '') {
       <div class="head"><img src="${avatarUrl(u.id, u.avatar)}" alt="">${esc(u.name)}</div>
       <a href="#/servers" class="${active === 'servers' ? 'on' : ''}">🖥️ My servers</a>
       <a href="#/collection" class="${active === 'collection' ? 'on' : ''}">🃏 My collection</a>
-      ${u.admin ? `<a href="#/admin" class="${active === 'admin' ? 'on' : ''}">🛠️ Admin</a>` : ''}
+      ${isAdmin ? `<a href="#/admin" class="${active === 'admin' ? 'on' : ''}">🛠️ Admin</a>` : ''}
       <a href="leaderboards.html">🏆 Leaderboards</a>${side}</aside>
     <main><h1 class="page-title">${title}</h1><p class="page-sub">${sub}</p>${body}</main></div>`;
 }
