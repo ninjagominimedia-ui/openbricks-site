@@ -389,8 +389,12 @@ async function leaderboards(env) {
     run('SELECT userId, rating, wins, losses FROM battle_stats WHERE season=? AND (wins+losses)>0 ORDER BY rating DESC LIMIT 25', [season]),
     run('SELECT userId, nfcoins AS coins FROM economy ORDER BY nfcoins DESC LIMIT 25'),
   ]);
-  const names = await users(env, [...collectors, ...battle, ...rich].map((r) => r.userId));
-  const withUser = (rows) => rows.map((r) => ({ ...r, user: names[r.userId] }));
+  const ids = [...new Set([...collectors, ...battle, ...rich].map((r) => r.userId))];
+  const [names, nickRows] = await Promise.all([users(env, ids),
+    ids.length ? run(`SELECT key, value FROM kv_store WHERE key IN (${ids.map(() => '?').join(',')})`, ids.map((id) => `nick:${id}`)) : []]);
+  // the name people picked with the bot's !nickname wins over their Discord name
+  const nicks = Object.fromEntries(nickRows.map((r) => { try { return [r.key.slice(5), JSON.parse(r.value)]; } catch { return [r.key.slice(5), null]; } }));
+  const withUser = (rows) => rows.map((r) => ({ ...r, user: { ...names[r.userId], name: nicks[r.userId] || names[r.userId]?.name } }));
   return { season, collectors: withUser(collectors), battle: withUser(battle), rich: withUser(rich) };
 }
 async function publicStats(env) {

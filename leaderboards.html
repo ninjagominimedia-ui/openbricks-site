@@ -21,19 +21,38 @@
 <script src="assets/common.js"></script>
 <script>
   renderNav('lb'); renderFooter();
-  const COLS = {
-    collectors: [['Unique cards', (r) => fmt(r.unique_cards)], ['Total', (r) => fmt(r.total)], ['Specials', (r) => fmt(r.specials)]],
-    battle: [['Rating', (r) => fmt(r.rating)], ['W / L', (r) => `${r.wins} / ${r.losses}`]],
-    rich: [['OBCoins', (r) => fmt(r.coins)]],
+  const winRate = (r) => Math.round((r.wins / Math.max(1, r.wins + r.losses)) * 100);
+  // main = the number the board is sorted by (big on the podium, bar in the table); cols = extra table columns
+  const BOARDS = {
+    collectors: { main: (r) => r.unique_cards, unit: 'unique cards', sub: (r) => `${fmt(r.total)} total · ${fmt(r.specials)} special`,
+      cols: [['Total', (r) => fmt(r.total)], ['Specials', (r) => fmt(r.specials)]], intro: () => 'Most different pack cards collected. Special versions break ties.' },
+    battle: { main: (r) => r.rating, unit: 'rating', sub: (r) => `${r.wins}W / ${r.losses}L · ${winRate(r)}%`,
+      cols: [['W / L', (r) => `${r.wins} / ${r.losses}`], ['Win %', (r) => `${winRate(r)}%`]], intro: () => `Season ${esc(data.season)} · top 3 win coins, #1 gets the 👑 Champion sleeve.` },
+    rich: { main: (r) => r.coins, unit: 'OBCoins', sub: () => 'wallet balance', cols: [], intro: () => 'Biggest OBCoins wallets.' },
   };
   let data = null, tab = 'collectors';
+  const me = Session.user?.id;
+  const name = (r) => esc(r.user?.name || 'Unknown');
+  const podium = (rows, b) => {
+    const slot = (r, i) => !r ? '<div></div>' : `<div class="p ${i === 0 ? 'first' : ''} ${r.userId === me ? 'mine' : ''}" style="--c:${['#ffd700', '#c0c0c0', '#cd7f32'][i]}">
+      ${i === 0 ? '<div class="crown">👑</div>' : ''}<div class="rank">#${i + 1}</div>
+      <img src="${avatarUrl(r.userId, r.user?.avatar, 128)}" alt=""><div class="name" title="${name(r)}">${name(r)}${r.userId === me ? ' <span class="you">you</span>' : ''}</div>
+      <div class="val">${fmt(b.main(r))}</div><div class="sub">${b.unit} · ${b.sub(r)}</div></div>`;
+    return `<div class="podium">${slot(rows[1], 1)}${slot(rows[0], 0)}${slot(rows[2], 2)}</div>`;
+  };
   const draw = () => {
-    const rows = data[tab];
-    if (!rows.length) { $('#board').innerHTML = '<div class="empty">Nobody here yet. Be the first!</div>'; return; }
-    $('#board').innerHTML = `${tab === 'battle' ? `<p class="page-sub">Season ${esc(data.season)} · top 3 win coins, #1 gets the 👑 Champion sleeve.</p>` : ''}
-      <table class="lb"><thead><tr><th>#</th><th>Player</th>${COLS[tab].map(([h]) => `<th>${h}</th>`).join('')}</tr></thead><tbody>
-      ${rows.map((r, i) => `<tr><td class="pos">#${i + 1}</td><td><div class="who"><img src="${avatarUrl(r.userId, r.user?.avatar)}" alt="">${esc(r.user?.name || 'Unknown')}</div></td>${COLS[tab].map(([, f]) => `<td>${f(r)}</td>`).join('')}</tr>`).join('')}
-      </tbody></table>`;
+    const rows = data[tab], b = BOARDS[tab];
+    if (!rows.length) { $('#board').innerHTML = `<p class="page-sub">${b.intro()}</p><div class="empty">Nobody here yet. Be the first!</div>`; return; }
+    const top = Math.max(1, b.main(rows[0])), mine = rows.findIndex((r) => r.userId === me);
+    const rest = rows.slice(3);
+    $('#board').innerHTML = `<p class="page-sub">${b.intro()}</p>${podium(rows, b)}
+      ${me ? `<p class="page-sub" style="margin:0 0 14px">${mine >= 0 ? `📍 You're <b>#${mine + 1}</b>${mine > 0 ? ` · ${fmt(b.main(rows[mine - 1]) - b.main(rows[mine]))} behind #${mine}` : ' 👑'}` : `📍 You're not in the top ${rows.length} yet.`}</p>` : ''}
+      ${rest.length ? `<table class="lb"><thead><tr><th>#</th><th>Player</th><th>${b.unit}</th>${b.cols.map(([h]) => `<th class="hide-sm">${h}</th>`).join('')}</tr></thead><tbody>
+      ${rest.map((r, i) => `<tr class="${r.userId === me ? 'me' : ''}"><td class="pos">#${i + 4}</td>
+        <td><div class="who"><img src="${avatarUrl(r.userId, r.user?.avatar)}" alt="">${name(r)}${r.userId === me ? ' <span class="you">you</span>' : ''}</div></td>
+        <td><b>${fmt(b.main(r))}</b><div class="bar"><i style="width:${Math.max(2, (b.main(r) / top) * 100)}%"></i></div></td>
+        ${b.cols.map(([, f]) => `<td class="hide-sm">${f(r)}</td>`).join('')}</tr>`).join('')}
+      </tbody></table>` : ''}`;
   };
   document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => {
     tab = b.dataset.tab; document.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === b)); if (data) draw();

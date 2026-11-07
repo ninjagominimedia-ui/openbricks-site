@@ -60,7 +60,7 @@ function renderFooter() {
   const f = document.createElement('footer');
   f.className = 'footer';
   f.innerHTML = `<div class="wrap">
-    <div><a class="brand" href="index.html"><span class="logo">🃏</span>OpenBricks</a><p style="max-width:320px">The Ninjago card collecting bot for Discord. Not affiliated with LEGO or Discord.</p><p>© ${new Date().getFullYear()} OpenBricks</p></div>
+    <div><a class="brand" href="index.html"><span class="logo">🃏</span>OpenBricks</a><p style="max-width:320px">The Ninjago card collecting bot for Discord. Not affiliated with LEGO or Discord.</p><p>© ${new Date().getFullYear()} OpenBricks · Credits to Lite for some ideas</p></div>
     <div class="cols">
       <div><h4>Bot</h4><a href="${OB.INVITE}" target="_blank" rel="noopener">Add to Discord</a><a href="commands.html">Commands</a><a href="leaderboards.html">Leaderboards</a></div>
       <div><h4>Account</h4><a href="dashboard.html">Dashboard</a><a href="dashboard.html#/collection">My collection</a><a href="${OB.SUPPORT}">Support server</a></div>
