@@ -269,8 +269,8 @@ const ADMIN = [
     { action: 'autodelete', label: 'Auto-delete bot messages', fields: [F.guild, F.op(['on', 'off'])],
       help: 'Deletes the bot messages 15 seconds after they are done. Spawns, games, trades and anything with buttons wait until finished.' },
     { action: 'purgebot', label: 'Purge all bot messages', fields: [F.guild, F.op(['start', 'status', 'stop'])],
-      help: 'Deletes every message the bot ever sent in the server, in every channel. Runs in the background: pick status to see progress.',
-      danger: 'Delete EVERY message the bot sent in this server?', dangerOp: 'start' },
+      help: 'Deletes every message the bot ever sent in the server, in every channel. Nuclear option: BOTH bot owners must pick start within 24 hours, then the button in the email to ninjago.mini.media@gmail.com does it. Status shows progress.',
+      danger: 'Vote to delete EVERY message the bot sent in this server?', dangerOp: 'start' },
     { action: 'leave', label: 'Leave server', fields: [F.guild], danger: 'Make the bot LEAVE this server?' },
   ] },
   { group: 'Everyone', items: [
@@ -333,7 +333,10 @@ function adminPage() {
     const btn = form.querySelector('button[type=submit]'), out = form.querySelector('.out');
     btn.disabled = true;
     try {
-      const res = await runJob(a.action, params, out);
+      // a purge start is a vote (needs both owners + the email button), not a bot job
+      const res = a.action === 'purgebot' && params.op === 'start'
+        ? await api('/api/admin/purge', { method: 'POST', body: JSON.stringify({ guildId: params.guildId }) })
+        : await runJob(a.action, params, out);
       out.innerHTML = `<p class="ok">${esc(res.text)}</p>${a.render && res.data ? a.render(res.data) : ''}`;
       if (a.action === 'servers') fillServers(res.data);
       loadLog();

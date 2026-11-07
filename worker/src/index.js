@@ -14,11 +14,15 @@
 //   POST /api/admin/jobs            -> bot owners only: queue an /admin action for the bot (commands/modules/webadmin.js)
 //   GET  /api/admin/jobs/:id        -> status + result of your job
 //   GET  /api/admin/log             -> last 40 website admin actions
+//   POST /api/admin/purge           -> bot owners: vote to purge every bot message in a server (needs 2 owners, then the email button)
+//   GET  /purge/confirm?t=          -> page with the final purge button (linked from the email)
+//   POST /purge/confirm             -> the final button: queues the purge for the bot
 //   GET  /api/collection            -> your pack cards, deck, battle rank, sleeves
 //   GET  /api/leaderboards          -> public top lists
 //   GET  /api/stats                 -> public counters for the home page
 //
-// Secrets (wrangler secret put ...): DISCORD_CLIENT_SECRET, BOT_TOKEN, TURSO_URL, TURSO_TOKEN, SESSION_SECRET
+// Secrets (wrangler secret put ...): DISCORD_CLIENT_SECRET, BOT_TOKEN, TURSO_URL, TURSO_TOKEN, SESSION_SECRET,
+//   RESEND_KEY (resend.com API key of the account registered with PURGE_EMAIL; sends the purge email)
 // Vars (wrangler.toml): DISCORD_CLIENT_ID, SITE_URL
 
 const DISCORD = 'https://discord.com/api/v10';
@@ -32,6 +36,7 @@ export default {
     try {
       if (url.pathname === '/login') return login(env, url);
       if (url.pathname === '/callback') return await callback(env, url, req);
+      if (url.pathname === '/purge/confirm') return await purgeConfirm(env, req, url);
       if (url.pathname === '/api/stats') return json(env, await cached('stats', 300e3, () => publicStats(env)), 300);
       if (url.pathname === '/api/leaderboards') return json(env, await cached('lb', 120e3, () => leaderboards(env)), 120);
       const session = await readSession(env, req);
@@ -46,6 +51,7 @@ export default {
       if (g && req.method === 'PUT') return json(env, await saveGuild(env, session, g[1], await req.json()));
       if (url.pathname === '/api/admin/jobs' && req.method === 'POST') return json(env, await adminQueue(env, session, await req.json()));
       if (url.pathname === '/api/admin/log') return json(env, await adminLog(env, session));
+      if (url.pathname === '/api/admin/purge' && req.method === 'POST') { rateLimit(session.uid, 10); return json(env, await purgeVote(env, session, await req.json(), url.origin)); }
       const job = url.pathname.match(/^\/api\/admin\/jobs\/(\d+)$/);
       if (job) return json(env, await adminJob(env, session, Number(job[1])));
       const m = url.pathname.match(/^\/api\/guilds\/(\d{17,20})\/(members|mod|warnings\/(\d{17,20}))$/);
@@ -416,6 +422,7 @@ async function adminQueue(env, s, body) {
   if (!ADMIN_ACTIONS.has(action)) throw fail(400, 'Unknown action');
   const params = JSON.stringify(body.params && typeof body.params === 'object' ? body.params : {});
   if (params.length > 8000) throw fail(400, 'Too long');
+  if (action === 'purgebot' && body.params?.op === 'start') throw fail(403, 'A purge needs both owners and the email button: use the purge vote.');
   const [row] = await one(env, 'INSERT INTO web_admin_jobs (adminId, action, params, status, createdAt) VALUES (?,?,?,?,?) RETURNING id',
     [s.uid, action, params, 'pending', Date.now()]).catch((e) => { throw /no such table/i.test(e.message) ? fail(503, 'The bot hasn\'t started with the admin panel code yet') : e; });
   return { id: row.id };
@@ -431,6 +438,81 @@ async function adminLog(env, s) {
   const rows = await one(env, 'SELECT id, adminId, action, status, result, createdAt FROM web_admin_jobs ORDER BY id DESC LIMIT 40').catch(() => []);
   // other admins' results stay short and never include data (webhook URLs etc.)
   return rows.map((r) => { let text = ''; try { text = JSON.parse(r.result || '{}').text || ''; } catch { /* ignore */ } return { ...r, result: undefined, text: String(text).slice(0, 200) }; });
+}
+
+// ---------------------------------------------------------------- purge: the nuclear option
+// Deleting every bot message in a server can't be undone, so it needs (1) two different bot owners to press Purge on the
+// website within 24h, then (2) the button in an email sent to PURGE_EMAIL. Only that button queues the job, and the bot
+// re-checks the purge:ok:<guildId> flag it sets before starting.
+const PURGE_EMAIL = 'ninjago.mini.media@gmail.com';
+const VOTE_MS = 24 * 3600e3, LINK_MS = 3600e3;
+const sha256 = async (t) => b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)));
+const kvGet = async (env, key) => { const [r] = await one(env, 'SELECT value FROM kv_store WHERE key=?', [key]); try { return r ? JSON.parse(r.value) : null; } catch { return null; } };
+const kvPut = (env, key, v) => (v === null ? one(env, 'DELETE FROM kv_store WHERE key=?', [key])
+  : one(env, 'INSERT INTO kv_store (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', [key, JSON.stringify(v)]));
+const logRow = (env, uid, action, text) => one(env, 'INSERT INTO web_admin_jobs (adminId, action, params, status, result, createdAt, doneAt) VALUES (?,?,?,?,?,?,?)',
+  [uid, action, '{}', 'done', JSON.stringify({ text }), Date.now(), Date.now()]).catch(() => {});
+const escHtml = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+async function purgeVote(env, s, body, origin) {
+  await requireOwner(env, s);
+  const guildId = String(body.guildId || '').trim();
+  const g = (await botGuildIds(env)).get(guildId);
+  if (!g) throw fail(404, 'The bot is not in that server');
+  const key = `purge:req:${guildId}`;
+  let req = await kvGet(env, key);
+  if (!req || Date.now() - req.at > VOTE_MS) req = { at: Date.now(), votes: [] };
+  if (!req.votes.includes(s.uid)) req.votes.push(s.uid);
+  if (req.votes.length < 2) {
+    await kvPut(env, key, req);
+    await logRow(env, s.uid, 'purge vote', `Asked to purge ${g.name} (1 of 2 owners). The other owner must press Purge within 24h.`);
+    return { text: `Vote saved (1 of 2). The other bot owner must also press Purge for ${g.name} within 24 hours.` };
+  }
+  // both agreed: email the final button (pressing Purge again sends a fresh email; the old link stops working)
+  if (!env.RESEND_KEY) throw fail(503, 'Both owners agreed, but the purge email is not set up yet (RESEND_KEY missing). Nothing was deleted.');
+  const secret = b64url(crypto.getRandomValues(new Uint8Array(24)));
+  req.token = await sha256(secret); req.tokenExp = Date.now() + LINK_MS; req.by = s.uid;
+  await kvPut(env, key, req);
+  const link = `${origin}/purge/confirm?t=${guildId}.${secret}`;
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST', headers: { Authorization: `Bearer ${env.RESEND_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: env.MAIL_FROM || 'OpenBricks <onboarding@resend.dev>', to: [PURGE_EMAIL],
+      subject: `Confirm: delete every OpenBricks message in ${g.name}`,
+      html: `<p>Both bot owners asked to delete <b>every message OpenBricks ever sent</b> in <b>${escHtml(g.name)}</b> (${guildId}).</p>
+        <p>This can't be undone. If that is right, open this link and press the final button (it works once, for 1 hour):</p>
+        <p><a href="${link}">${link}</a></p><p>If you didn't expect this, ignore this email and nothing happens.</p>`,
+    }),
+  });
+  if (!res.ok) throw fail(502, `Both owners agreed, but the email failed (${res.status}: ${(await res.text()).slice(0, 200)}). Nothing was deleted; press Purge again to retry.`);
+  await logRow(env, s.uid, 'purge vote', `Both owners agreed to purge ${g.name}. Final button emailed.`);
+  return { text: `Both owners agreed. The final button was emailed to ${PURGE_EMAIL.replace(/^(.{3}).*@/, '$1***@')}. Nothing is deleted until it is pressed (within 1 hour).` };
+}
+
+function page(title, body, status = 200) {
+  return new Response(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>${escHtml(title)}</title><style>body{background:#0d1017;color:#e8e6e1;font:16px/1.5 system-ui,sans-serif;max-width:560px;margin:60px auto;padding:0 20px}
+h1{font-size:22px}button{background:#d8432d;color:#fff;border:0;border-radius:4px;padding:14px 22px;font:inherit;font-weight:700;cursor:pointer}</style></head>
+<body><h1>${escHtml(title)}</h1>${body}</body></html>`, { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Frame-Options': 'DENY' } });
+}
+async function purgeConfirm(env, req, url) {
+  const t = req.method === 'POST' ? String((await req.formData()).get('t') || '') : String(url.searchParams.get('t') || '');
+  const [guildId, secret] = t.split('.');
+  const bad = () => page('Link not valid', '<p>This link expired, was already used, or was replaced by a newer email. Nothing was deleted.</p>', 410);
+  if (!/^\d{17,20}$/.test(guildId || '') || !secret) return bad();
+  const key = `purge:req:${guildId}`, r = await kvGet(env, key);
+  if (!r?.token || r.tokenExp < Date.now() || r.token !== await sha256(secret)) return bad();
+  const name = (await botGuildIds(env)).get(guildId)?.name || guildId;
+  // GET only shows the button: mail scanners open links, so opening it must never delete anything
+  if (req.method !== 'POST') {
+    return page('Final step: purge', `<p>This deletes <b>every message OpenBricks ever sent in ${escHtml(name)}</b>, in every channel. It can't be undone.</p>
+      <form method="post"><input type="hidden" name="t" value="${escHtml(t)}"><button type="submit">Delete every bot message in ${escHtml(name)}</button></form>`);
+  }
+  await kvPut(env, key, null); // single use
+  await kvPut(env, `purge:ok:${guildId}`, Date.now());
+  await one(env, 'INSERT INTO web_admin_jobs (adminId, action, params, status, createdAt) VALUES (?,?,?,?,?)',
+    [r.by, 'purgebot', JSON.stringify({ guildId, op: 'start' }), 'pending', Date.now()]);
+  return page('Purge started', `<p>The bot starts deleting its messages in <b>${escHtml(name)}</b> within a few seconds (if it is online). Progress: website Admin, Purge, "status".</p>`);
 }
 
 // ---------------------------------------------------------------- collection + leaderboards
