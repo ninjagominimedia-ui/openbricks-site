@@ -227,7 +227,7 @@ async function requireManage(env, s, guildId) {
 }
 
 // Settings the dashboard can edit. channel = must be a text channel of that server.
-const CHANNEL_KEYS = ['welcomeChannel', 'goodbyeChannel', 'invitesChannel', 'logsChannel', 'starChannel', 'lastLetterChannel', 'birthdayChannel'];
+const CHANNEL_KEYS = ['cardChannel', 'gameChannel', 'welcomeChannel', 'goodbyeChannel', 'invitesChannel', 'logsChannel', 'starChannel', 'lastLetterChannel', 'birthdayChannel'];
 const TEXT_KEYS = { welcomeText: 1000, goodbyeText: 1000 };
 const NUMBER_KEYS = { starThreshold: [1, 100], activityReward: [0, 1000000] };
 const CONFIG_CHANNELS = ['spawnChannelId', 'announcementChannelId'];
@@ -398,7 +398,7 @@ async function modAction(env, s, id, body) {
 // ---------------------------------------------------------------- admin panel (bot owners only)
 // The bot publishes its owner list (config.authorizedAdmins) in kv webadmin:owners and runs the queued jobs itself.
 const ADMIN_ACTIONS = new Set(['stats', 'servers', 'invite', 'leave', 'announce', 'webhook', 'userinfo', 'coins', 'addcard', 'removecard',
-  'giveaway', 'botban', 'dm', 'broadcast', 'globalannounce', 'resetlb', 'exportdb', 'reloadconfig', 'reloadpacks', 'raidscan', 'restart', 'shutdown']);
+  'giveaway', 'botban', 'dm', 'broadcast', 'globalannounce', 'resetlb', 'exportdb', 'reloadconfig', 'reloadpacks', 'raidscan', 'autodelete', 'purgebot', 'restart', 'shutdown']);
 let ownersCache = { at: 0, ids: [] };
 async function isBotOwner(env, uid) {
   if (Date.now() - ownersCache.at > 60e3) {

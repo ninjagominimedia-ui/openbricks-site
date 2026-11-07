@@ -10,6 +10,10 @@ const MODULES = [
     { key: 'ninjagoOnly', label: 'Ninjago cards only', type: 'toggle', help: 'Only spawn cards from the Ninjago universe.' },
     { key: 'activityReward', label: 'Activity reward (OBCoins)', type: 'number', min: 0, help: 'Coins for being active in chat. 0 = off.' },
   ] },
+  { id: 'botchannels', name: 'Bot channels', desc: 'Keep the bot in its own channels. Moderation and admin commands still work everywhere.', fields: [
+    { key: 'cardChannel', label: 'Card channel', type: 'channel', help: 'Card, economy, social and every other player command only works here. Empty = anywhere.' },
+    { key: 'gameChannel', label: 'Game channel', type: 'channel', help: 'Games only work here. Empty = anywhere.' },
+  ] },
   { id: 'welcome', name: 'Welcome', desc: 'Greet new members.', fields: [
     { key: 'welcomeChannel', label: 'Welcome channel', type: 'channel' },
     { key: 'welcomeText', label: 'Message', type: 'text', help: 'Placeholders: {user} {username} {server} {count}' },
@@ -261,6 +265,11 @@ const ADMIN = [
     { action: 'invite', label: 'Generate invite', fields: [F.guild, F.channelOpt] },
     { action: 'announce', label: 'Server announcement', fields: [F.guild, F.channelOpt, F.message] },
     { action: 'webhook', label: 'Create webhook', fields: [F.guild, F.channel, F.name], render: (d) => `<p>Webhook URL (keep it secret):</p><code class="secret">${esc(d.url)}</code>` },
+    { action: 'autodelete', label: 'Auto-delete bot messages', fields: [F.guild, F.op(['on', 'off'])],
+      help: 'Deletes the bot messages 15 seconds after they are done. Spawns, games, trades and anything with buttons wait until finished.' },
+    { action: 'purgebot', label: 'Purge all bot messages', fields: [F.guild, F.op(['start', 'status', 'stop'])],
+      help: 'Deletes every message the bot ever sent in the server, in every channel. Runs in the background: pick status to see progress.',
+      danger: 'Delete EVERY message the bot sent in this server?', dangerOp: 'start' },
     { action: 'leave', label: 'Leave server', fields: [F.guild], danger: 'Make the bot LEAVE this server?' },
   ] },
   { group: 'Everyone', items: [
@@ -319,7 +328,7 @@ function adminPage() {
       if (!v && !f.optional) return toast(`Fill in: ${f.label}`, 'bad');
       if (v) params[f.key] = v;
     }
-    if (a.danger && !confirm(a.danger)) return;
+    if (a.danger && (!a.dangerOp || params.op === a.dangerOp) && !confirm(a.danger)) return;
     const btn = form.querySelector('button[type=submit]'), out = form.querySelector('.out');
     btn.disabled = true;
     try {
