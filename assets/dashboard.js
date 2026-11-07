@@ -86,10 +86,10 @@ async function serversPage() {
 
 // ---------------------------------------------------------------- server settings
 async function serverPage(id) {
-  const data = await api(`/api/guilds/${id}`);
+  const [data, mod] = await Promise.all([api(`/api/guilds/${id}`), api(`/api/guilds/${id}/mod`).catch(() => null)]);
   let saved = { ...data.settings };
   const icon = guildIcon(id, data.guild.icon);
-  const side = `<div class="label">${esc(data.guild.name)}</div>${MODULES.map((m) => `<a href="#/server/${id}" data-jump="${m.id}">${m.icon} ${m.name}</a>`).join('')}`;
+  const side = `<div class="label">${esc(data.guild.name)}</div>${MODULES.map((m) => `<a href="#/server/${id}" data-jump="${m.id}">${m.icon} ${m.name}</a>`).join('')}${mod ? `<a href="#/server/${id}" data-jump="mod">🛡️ Moderation</a>` : ''}`;
   const chanOpts = (v) => `<option value="">Disabled</option>${data.channels.map((c) => `<option value="${c.id}" ${c.id === v ? 'selected' : ''}># ${esc(c.name)}</option>`).join('')}`;
   const field = (f) => {
     const v = saved[f.key];
@@ -100,8 +100,9 @@ async function serverPage(id) {
     return `<div class="field" ${f.type === 'text' ? 'style="grid-column:1/-1"' : ''}><label>${f.label}</label>${input}${f.help && f.type !== 'toggle' ? `<small>${f.help}</small>` : ''}</div>`;
   };
   shell('servers', `${icon ? `<img src="${icon}" style="width:44px;height:44px;border-radius:12px;display:inline-block;vertical-align:middle;margin-right:12px">` : ''}${esc(data.guild.name)}`,
-    'Changes apply right away after you save.', MODULES.map((m) => `<section class="panel" id="m-${m.id}"><h3>${m.icon} ${m.name}</h3><p class="desc">${m.desc}</p><div class="fields">${m.fields.map(field).join('')}</div></section>`).join(''), side);
+    'Changes apply right away after you save.', MODULES.map((m) => `<section class="panel" id="m-${m.id}"><h3>${m.icon} ${m.name}</h3><p class="desc">${m.desc}</p><div class="fields">${m.fields.map(field).join('')}</div></section>`).join('') + (mod ? modPanel(mod) : ''), side);
   document.querySelectorAll('[data-jump]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); $(`#m-${a.dataset.jump}`).scrollIntoView(); }));
+  if (mod) modWire(id, mod);
 
   const read = (el) => (el.type === 'checkbox' ? el.checked : el.type === 'number' ? (el.value === '' ? null : Number(el.value)) : el.value || null);
   const changes = () => {
@@ -122,6 +123,84 @@ async function serverPage(id) {
   };
   // closing the tab with unsaved changes asks first
   window.onbeforeunload = () => (Object.keys(changes()).length ? true : undefined);
+}
+
+// ---------------------------------------------------------------- moderation (the Worker re-checks every permission)
+const LABEL = { ban: 'Ban', unban: 'Unban', kick: 'Kick', timeout: 'Timeout', untimeout: 'Remove timeout for', warn: 'Warn', unwarn: 'Remove warning' };
+const when = (ts) => new Date(ts).toLocaleString();
+const row = (main, sub, right) => `<div class="toggle-row"><div><b>${main}</b><span class="m">${sub}</span></div>${right}</div>`;
+const actBtn = (act, label, m, ok = true, extra = '') => `<button class="btn ghost small" data-act="${act}" data-uid="${m.id}" data-name="${esc(m.name)}" ${extra} ${ok ? '' : 'disabled title="You don\'t have that permission"'}>${label}</button>`;
+
+function modPanel(mod) {
+  return `<section class="panel" id="m-mod"><h3>🛡️ Moderation</h3>
+    <p class="desc">Same rules as the bot's commands: you need the Discord permission, and your highest role must be above theirs. Every action is posted in your log channel.</p>
+    <form id="modfind" class="fields"><div class="field" style="grid-column:1/-1"><label>Find a member</label><input id="modq" placeholder="Name or user ID" autocomplete="off"><small>Press Enter to search.</small></div></form>
+    <div id="modres"></div>
+    <h4 style="margin:22px 0 8px">Recent actions</h4>
+    ${mod.actions.length ? mod.actions.map((a) => row(esc(a.action), `${esc(a.reason)} · target ${esc(a.targetId)} · by ${esc(a.modId)}`, `<span class="chip">${when(a.ts)}</span>`)).join('') : '<div class="empty">No actions yet.</div>'}
+    ${mod.perms.ban ? `<h4 style="margin:22px 0 8px">Bans (${mod.bans.length})</h4>${mod.bans.length
+      ? mod.bans.map((b) => row(esc(b.tag), `${esc(b.reason || 'No reason')} · ${b.id}`, actBtn('unban', 'Unban', { id: b.id, name: b.tag }))).join('')
+      : '<div class="empty">Nobody is banned.</div>'}` : ''}</section>`;
+}
+function memberRow(m, p) {
+  const timed = m.timedOutUntil && new Date(m.timedOutUntil) > new Date();
+  return `<div class="toggle-row"><div style="display:flex;gap:10px;align-items:center"><img src="${avatarUrl(m.id, m.avatar)}" style="width:32px;height:32px;border-radius:50%" alt="">
+      <div><b>${esc(m.name)}</b><span class="m">@${esc(m.tag)} · ${m.id}${timed ? ' · 🔇 timed out' : ''}</span></div></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${actBtn('warnings', 'Warnings', m)}${actBtn('warn', 'Warn', m)}${timed ? actBtn('untimeout', 'Remove timeout', m, p.timeout) : actBtn('timeout', 'Timeout', m, p.timeout)}${actBtn('kick', 'Kick', m, p.kick)}${actBtn('ban', 'Ban', m, p.ban)}</div></div>
+    <div id="w-${m.id}"></div>`;
+}
+async function showWarnings(id, uid, name) {
+  const box = $(`#w-${uid}`);
+  if (!box) return;
+  box.innerHTML = '<div class="spinner"></div>';
+  try {
+    const list = await api(`/api/guilds/${id}/warnings/${uid}`);
+    box.innerHTML = `<div style="margin:0 0 12px 42px">${list.length
+      ? list.map((w) => row(`#${w.id}`, `${esc(w.reason)} · ${when(w.ts)}`, actBtn('unwarn', 'Remove', { id: uid, name }, true, `data-wid="${w.id}"`))).join('')
+      : '<div class="empty">No warnings. 😇</div>'}</div>`;
+  } catch (e) { box.innerHTML = ''; toast(e.message, 'bad'); }
+}
+function modWire(id, mod) {
+  const search = async () => {
+    const res = $('#modres'), q = $('#modq').value.trim();
+    if (!q) { res.innerHTML = ''; return; }
+    res.innerHTML = '<div class="spinner"></div>';
+    try {
+      const list = await api(`/api/guilds/${id}/members?q=${encodeURIComponent(q)}`);
+      res.innerHTML = list.length ? list.map((m) => memberRow(m, mod.perms)).join('') : '<div class="empty">No members found.</div>';
+    } catch (e) { res.innerHTML = ''; toast(e.message, 'bad'); }
+  };
+  $('#modfind').onsubmit = (e) => { e.preventDefault(); search(); };
+  $('#m-mod').onclick = async (e) => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn || btn.disabled) return;
+    const { act, uid, name, wid } = btn.dataset;
+    if (act === 'warnings') return showWarnings(id, uid, name);
+    const body = { action: act, userId: uid };
+    if (act === 'unwarn') {
+      if (!confirm(`Remove warning #${wid} from ${name}?`)) return;
+      body.warnId = Number(wid);
+    } else {
+      if (act === 'timeout') {
+        const t = prompt(`Timeout ${name} for how long? Like 10m, 2h or 1d (max 28d)`, '10m');
+        if (t === null) return;
+        const mm = /^(\d+)\s*([mhd]?)$/i.exec(t.trim());
+        if (!mm) return toast('Use a number with m, h or d, like 2h', 'bad');
+        body.minutes = Number(mm[1]) * ({ h: 60, d: 1440 }[mm[2].toLowerCase()] || 1);
+      }
+      const r = prompt(`${LABEL[act]} ${name}? Reason (optional):`, '');
+      if (r === null) return;
+      body.reason = r;
+    }
+    btn.disabled = true;
+    try {
+      await api(`/api/guilds/${id}/mod`, { method: 'POST', body: JSON.stringify(body) });
+      toast(`${LABEL[act]} ${name}: done ✅`);
+      if (act === 'unban') return btn.closest('.toggle-row').remove();
+      await search();
+      if (act === 'warn' || act === 'unwarn') showWarnings(id, uid, name);
+    } catch (err) { toast(err.message, 'bad'); btn.disabled = false; }
+  };
 }
 
 // ---------------------------------------------------------------- collection

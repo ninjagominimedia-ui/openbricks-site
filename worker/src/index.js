@@ -7,6 +7,10 @@
 //   GET  /api/me                    -> your profile + the servers you can manage (and whether the bot is in them)
 //   GET  /api/guilds/:id            -> settings + text channels of a server you manage
 //   PUT  /api/guilds/:id            -> save settings
+//   GET  /api/guilds/:id/members?q= -> member search (moderation)
+//   GET  /api/guilds/:id/mod        -> your mod permissions, bans, recent mod actions
+//   POST /api/guilds/:id/mod        -> ban / unban / kick / timeout / untimeout / warn / unwarn
+//   GET  /api/guilds/:id/warnings/:userId
 //   GET  /api/collection            -> your pack cards, deck, battle rank, sleeves
 //   GET  /api/leaderboards          -> public top lists
 //   GET  /api/stats                 -> public counters for the home page
@@ -34,6 +38,11 @@ export default {
       const g = url.pathname.match(/^\/api\/guilds\/(\d{17,20})$/);
       if (g && req.method === 'GET') return json(env, await guildSettings(env, session, g[1]));
       if (g && req.method === 'PUT') return json(env, await saveGuild(env, session, g[1], await req.json()));
+      const m = url.pathname.match(/^\/api\/guilds\/(\d{17,20})\/(members|mod|warnings\/(\d{17,20}))$/);
+      if (m && m[2] === 'members') return json(env, await findMembers(env, session, m[1], url.searchParams.get('q')));
+      if (m && m[2] === 'mod' && req.method === 'GET') return json(env, await modOverview(env, session, m[1]));
+      if (m && m[2] === 'mod' && req.method === 'POST') return json(env, await modAction(env, session, m[1], await req.json()));
+      if (m && m[3]) return json(env, await memberWarnings(env, session, m[1], m[3]));
       return json(env, { error: 'Not found' }, 0, 404);
     } catch (e) {
       return json(env, { error: e.message || String(e) }, 0, e.status || 500);
@@ -56,7 +65,7 @@ function cors(env, res) {
   const h = new Headers(res.headers);
   h.set('Access-Control-Allow-Origin', new URL(env.SITE_URL).origin);
   h.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-  h.set('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
+  h.set('Access-Control-Allow-Methods', 'GET, PUT, POST, OPTIONS');
   return new Response(res.body, { status: res.status, headers: h });
 }
 function json(env, data, maxAge = 0, status = 200) {
@@ -219,6 +228,129 @@ async function saveGuild(env, s, id, body) {
   }
   if ('ninjagoOnly' in body) put('ninjagoOnly', body.ninjagoOnly ? true : null);
   if (stmts.length) await sql(env, stmts);
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------- moderation (same rules as the bot's moderation.js)
+const PERM = { kick: [0x2n, 'Kick Members'], ban: [0x4n, 'Ban Members'], timeout: [1n << 40n, 'Timeout Members'] };
+const NEEDS = { ban: 'ban', unban: 'ban', kick: 'kick', timeout: 'timeout', untimeout: 'timeout', warn: null, unwarn: null };
+const has = (g, perm) => g.owner || (BigInt(g.permissions) & (ADMINISTRATOR | PERM[perm][0])) !== 0n;
+const memberOut = (m) => ({ id: m.user.id, name: m.nick || m.user.global_name || m.user.username, tag: m.user.username, avatar: m.user.avatar, timedOutUntil: m.communication_disabled_until || null });
+const dur = (min) => (min % 1440 === 0 ? `${min / 1440}d` : min % 60 === 0 ? `${min / 60}h` : `${min}m`);
+
+async function findMembers(env, s, id, q) {
+  await requireManage(env, s, id);
+  q = String(q || '').trim().slice(0, 100);
+  if (!q) return [];
+  const list = /^\d{17,20}$/.test(q)
+    ? [await discord(`/guilds/${id}/members/${q}`, botAuth(env)).catch(() => null)].filter(Boolean)
+    : await discord(`/guilds/${id}/members/search?query=${encodeURIComponent(q)}&limit=10`, botAuth(env));
+  return list.map(memberOut);
+}
+async function modOverview(env, s, id) {
+  const g = await requireManage(env, s, id);
+  const [bans, [actions]] = await Promise.all([
+    has(g, 'ban') ? discord(`/guilds/${id}/bans?limit=100`, botAuth(env)).catch(() => []) : [],
+    sql(env, [['SELECT modId, targetId, action, reason, ts FROM mod_actions WHERE guildId=? ORDER BY ts DESC LIMIT 25', [id]]]),
+  ]);
+  return {
+    perms: Object.fromEntries(Object.keys(PERM).map((p) => [p, has(g, p)])),
+    bans: bans.map((b) => ({ id: b.user.id, tag: b.user.username, reason: b.reason })), actions,
+  };
+}
+async function memberWarnings(env, s, id, uid) {
+  await requireManage(env, s, id);
+  return one(env, 'SELECT id, modId, reason, ts FROM warnings WHERE guildId=? AND userId=? ORDER BY ts DESC', [id, uid]);
+}
+
+// Discord's own check stops the bot acting on roles above its own; this stops the *person* doing it.
+async function checkRank(env, id, actorId, target) {
+  const guild = await discord(`/guilds/${id}`, botAuth(env));
+  if (target.user.id === guild.owner_id) throw fail(403, 'You can\'t moderate the server owner.');
+  if (actorId === guild.owner_id) return;
+  const actor = await discord(`/guilds/${id}/members/${actorId}`, botAuth(env));
+  const pos = new Map(guild.roles.map((r) => [r.id, r.position]));
+  const top = (m) => Math.max(0, ...m.roles.map((r) => pos.get(r) ?? 0));
+  if (top(actor) <= top(target)) throw fail(403, 'Your highest role must be strictly above theirs.');
+}
+async function botDo(env, path, method, body, reason) {
+  const res = await fetch(DISCORD + path, {
+    method, body: body === undefined ? undefined : JSON.stringify(body),
+    headers: { Authorization: botAuth(env), 'Content-Type': 'application/json', 'X-Audit-Log-Reason': encodeURIComponent(reason.slice(0, 400)) },
+  });
+  if (res.status === 403) throw fail(403, 'OpenBricks can\'t do that. Its role must be above theirs and it needs that permission.');
+  if (res.status === 404) throw fail(404, 'Not found (maybe already done?)');
+  if (!res.ok) throw fail(502, `Discord ${res.status}`);
+}
+async function dmUser(env, uid, content) {
+  try {
+    const ch = await discord('/users/@me/channels', botAuth(env), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recipient_id: uid }) });
+    await botDo(env, `/channels/${ch.id}/messages`, 'POST', { content, allowed_mentions: { parse: [] } }, '');
+  } catch { /* DMs closed: the action still happens, like in the bot */ }
+}
+async function record(env, id, modId, targetId, action, reason) {
+  const [, logs] = await sql(env, [
+    ['INSERT INTO mod_actions (guildId, modId, targetId, action, reason, ts) VALUES (?,?,?,?,?,?)', [id, modId, targetId, action, reason, Date.now()]],
+    ['SELECT value FROM kv_store WHERE key=?', [`guild:${id}:logsChannel`]],
+  ]);
+  let ch = logs[0]?.value;
+  try { ch = JSON.parse(ch); } catch { /* stored raw */ }
+  if (ch) await botDo(env, `/channels/${ch}/messages`, 'POST', {
+    allowed_mentions: { parse: [] },
+    embeds: [{ title: `🛡️ ${action}`, color: 0xE74C3C, description: `**Target:** <@${targetId}> (\`${targetId}\`)\n**Moderator:** <@${modId}> (website dashboard)\n**Reason:** ${reason}`.slice(0, 4096) }],
+  }, '').catch(() => {});
+}
+
+async function modAction(env, s, id, body) {
+  const g = await requireManage(env, s, id);
+  const action = String(body.action || '');
+  if (!Object.hasOwn(NEEDS, action)) throw fail(400, 'Unknown action');
+  const need = NEEDS[action];
+  if (need && !has(g, need)) throw fail(403, `You need ${PERM[need][1]} in this server.`);
+  const uid = String(body.userId || '');
+  if (!/^\d{17,20}$/.test(uid)) throw fail(400, 'Pick a member first.');
+  if (uid === s.uid) throw fail(400, 'You can\'t do that to yourself.');
+  const reason = String(body.reason || '').trim().slice(0, 400) || 'No reason given';
+  const audit = `${s.name} (dashboard): ${reason}`;
+  if (action !== 'unban') {
+    const target = await discord(`/guilds/${id}/members/${uid}`, botAuth(env)).catch(() => null);
+    if (!target && action !== 'unwarn') throw fail(404, 'That user is not in this server.');
+    if (target) await checkRank(env, id, s.uid, target);
+  }
+  if (action === 'ban') {
+    await dmUser(env, uid, `🔨 You were banned from **${g.name}**: ${reason}`);
+    await botDo(env, `/guilds/${id}/bans/${uid}`, 'PUT', {}, audit);
+    await record(env, id, s.uid, uid, 'Ban', reason);
+  } else if (action === 'unban') {
+    await botDo(env, `/guilds/${id}/bans/${uid}`, 'DELETE', undefined, audit);
+    await record(env, id, s.uid, uid, 'Unban', reason);
+  } else if (action === 'kick') {
+    await dmUser(env, uid, `👢 You were kicked from **${g.name}**: ${reason}`);
+    await botDo(env, `/guilds/${id}/members/${uid}`, 'DELETE', undefined, audit);
+    await record(env, id, s.uid, uid, 'Kick', reason);
+  } else if (action === 'timeout') {
+    const min = Math.round(Number(body.minutes));
+    if (!Number.isFinite(min) || min < 1 || min > 28 * 1440) throw fail(400, 'Timeout must be 1 minute to 28 days.');
+    await botDo(env, `/guilds/${id}/members/${uid}`, 'PATCH', { communication_disabled_until: new Date(Date.now() + min * 60e3).toISOString() }, audit);
+    await record(env, id, s.uid, uid, `Timeout (${dur(min)})`, reason);
+    await dmUser(env, uid, `🔇 You were timed out in **${g.name}** for ${dur(min)}: ${reason}`);
+  } else if (action === 'untimeout') {
+    await botDo(env, `/guilds/${id}/members/${uid}`, 'PATCH', { communication_disabled_until: null }, audit);
+    await record(env, id, s.uid, uid, 'Timeout removed', reason);
+  } else if (action === 'warn') {
+    const [, [{ c }]] = await sql(env, [
+      ['INSERT INTO warnings (guildId, userId, modId, reason, ts) VALUES (?,?,?,?,?)', [id, uid, s.uid, reason, Date.now()]],
+      ['SELECT COUNT(*) c FROM warnings WHERE guildId=? AND userId=?', [id, uid]],
+    ]);
+    await record(env, id, s.uid, uid, 'Warn', reason);
+    await dmUser(env, uid, `⚠️ You were warned in **${g.name}**: ${reason} (warning #${c})`);
+  } else if (action === 'unwarn') {
+    const wid = Math.round(Number(body.warnId));
+    const [w] = await one(env, 'SELECT id FROM warnings WHERE id=? AND guildId=? AND userId=?', [wid, id, uid]);
+    if (!w) throw fail(404, 'No matching warning found.');
+    await one(env, 'DELETE FROM warnings WHERE id=?', [w.id]);
+    await record(env, id, s.uid, uid, 'Unwarn', `Removed warning #${w.id}`);
+  }
   return { ok: true };
 }
 
