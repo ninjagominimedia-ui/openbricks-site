@@ -231,6 +231,7 @@ const ADMIN = [
     { action: 'stats', label: 'Bot stats', render: (d) => `<div class="kpis">${[['Servers', d.servers], ['Members', d.members], ['Cards collected', d.cards], ['Collectors', d.collectors], ['Uptime', `${Math.floor(d.uptimeMin / 60)}h ${d.uptimeMin % 60}m`]].map(([k, v]) => `<div class="kpi"><b>${typeof v === 'number' ? fmt(v) : esc(v)}</b><span>${k}</span></div>`).join('')}</div><p class="page-sub">Largest: ${esc(d.largest)}</p>` },
     { action: 'servers', label: 'Server list', render: (d) => `<div class="scroll">${d.map((g) => `<div class="toggle-row"><div><b>${esc(g.name)}</b><span class="m">${fmt(g.members)} members · ${g.id}</span></div></div>`).join('')}</div>` },
     { action: 'reloadconfig', label: 'Reload cards.json' },
+    { action: 'reloadpacks', label: 'Reload pack cards', help: 'Pulls in pack cards published from the PC with import-pack-cards.js --publish. No re-zip or restart needed.' },
     { action: 'exportdb', label: 'Export database', help: 'The bot DMs you the database file.' },
     { action: 'restart', label: 'Restart bot', danger: 'Restart the bot now?' },
     { action: 'shutdown', label: 'Shut down bot', danger: 'Shut the bot DOWN? It stays off until someone starts it again on the host.' },
