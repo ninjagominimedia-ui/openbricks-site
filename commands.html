@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#0d1017">
 <title>Commands — OpenBricks</title>
 <meta name="description" content="Every OpenBricks command: collecting, packs, battles, economy, games and server tools.">
-<link rel="stylesheet" href="assets/style.css?v=20261107e">
+<link rel="stylesheet" href="assets/style.css?v=20261107f">
 </head>
 <body>
 <div class="wrap layout">
@@ -19,20 +19,20 @@
     <div id="list"><div class="spinner"></div></div>
   </main>
 </div>
-<script src="assets/config.js?v=20261107e"></script>
-<script src="assets/common.js?v=20261107e"></script>
+<script src="assets/config.js?v=20261107f"></script>
+<script src="assets/common.js?v=20261107f"></script>
 <script>
   renderNav('commands'); renderFooter();
   // data/commands.json is made by tools/build-data.js from the bot's help registry
   fetch('data/commands.json').then((r) => r.json()).then((cats) => {
     const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    $('#cats').innerHTML += cats.map((c) => `<a href="#${slug(c.name)}">${c.icon} ${esc(c.name)}<span class="count">${c.commands.length}</span></a>`).join('');
+    $('#cats').innerHTML += cats.map((c) => `<a href="#${slug(c.name)}">${esc(c.name)}<span class="count">${c.commands.length}</span></a>`).join('');
     const draw = (q = '') => {
       q = q.toLowerCase().trim();
       const html = cats.map((c) => {
         const list = c.commands.filter((x) => !q || `${x.usage} ${x.desc} ${x.aliases.join(' ')}`.toLowerCase().includes(q));
         if (!list.length) return '';
-        return `<div class="cat-title" id="${slug(c.name)}">${c.icon} ${esc(c.name)}</div>` + list.map((x) =>
+        return `<div class="cat-title" id="${slug(c.name)}">${esc(c.name)}</div>` + list.map((x) =>
           `<div class="cmd"><div class="name">${esc(x.usage)}</div><p>${esc(x.desc)}</p>${x.aliases.length ? `<div class="alias">Aliases: ${x.aliases.map((a) => `<code>${esc(a)}</code>`).join(' ')}</div>` : ''}</div>`).join('');
       }).join('');
       $('#list').innerHTML = html || '<div class="empty">No command matches that search.</div>';

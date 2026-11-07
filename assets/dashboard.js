@@ -4,35 +4,35 @@ const app = $('#app');
 
 // settings shown per server, grouped like Dyno modules. key = field the Worker accepts.
 const MODULES = [
-  { id: 'spawns', icon: '🃏', name: 'Card Spawns', desc: 'Where cards appear while people chat.', fields: [
+  { id: 'spawns', name: 'Card Spawns', desc: 'Where cards appear while people chat.', fields: [
     { key: 'spawnChannelId', label: 'Spawn channel', type: 'channel' },
     { key: 'announcementChannelId', label: 'Announcements channel', type: 'channel', help: 'Bot updates and event news.' },
     { key: 'ninjagoOnly', label: 'Ninjago cards only', type: 'toggle', help: 'Only spawn cards from the Ninjago universe.' },
     { key: 'activityReward', label: 'Activity reward (OBCoins)', type: 'number', min: 0, help: 'Coins for being active in chat. 0 = off.' },
   ] },
-  { id: 'welcome', icon: '👋', name: 'Welcome', desc: 'Greet new members.', fields: [
+  { id: 'welcome', name: 'Welcome', desc: 'Greet new members.', fields: [
     { key: 'welcomeChannel', label: 'Welcome channel', type: 'channel' },
     { key: 'welcomeText', label: 'Message', type: 'text', help: 'Placeholders: {user} {username} {server} {count}' },
   ] },
-  { id: 'goodbye', icon: '🚪', name: 'Goodbye', desc: 'Say bye when someone leaves.', fields: [
+  { id: 'goodbye', name: 'Goodbye', desc: 'Say bye when someone leaves.', fields: [
     { key: 'goodbyeChannel', label: 'Goodbye channel', type: 'channel' },
     { key: 'goodbyeText', label: 'Message', type: 'text', help: 'Placeholders: {user} {username} {server} {count}' },
   ] },
-  { id: 'logs', icon: '📜', name: 'Logging', desc: 'Keep track of what happens.', fields: [
+  { id: 'logs', name: 'Logging', desc: 'Keep track of what happens.', fields: [
     { key: 'logsChannel', label: 'Server log channel', type: 'channel' },
     { key: 'invitesChannel', label: 'Invite log channel', type: 'channel' },
   ] },
-  { id: 'star', icon: '⭐', name: 'Starboard', desc: 'Messages with enough ⭐ get reposted.', fields: [
+  { id: 'star', name: 'Starboard', desc: 'Messages that get enough star reactions are reposted here.', fields: [
     { key: 'starChannel', label: 'Starboard channel', type: 'channel' },
     { key: 'starThreshold', label: 'Stars needed', type: 'number', min: 1, max: 100 },
   ] },
-  { id: 'fun', icon: '🎉', name: 'Fun', desc: 'Community channels.', fields: [
+  { id: 'fun', name: 'Fun', desc: 'Community channels.', fields: [
     { key: 'lastLetterChannel', label: 'Last Letter game channel', type: 'channel' },
     { key: 'birthdayChannel', label: 'Birthday channel', type: 'channel' },
   ] },
 ];
-const SLEEVE_NAMES = { ninja: '🥷 Ninja Black', dragon: '🐉 Dragon Scale', ice: '❄️ Frost', neon: '💜 Neon Glow', gold: '🏆 Golden Weapon', jade: '🟢 Jade Temple', champion: '👑 Season Champion' };
-const VERSION = { holo: ['🌈', 'Holo Foil', 250], fullart: ['🖼️', 'Full Art', 150], gold: ['🥇', 'Gold', 100], shadow: ['🌑', 'Shadow', 50], ghost: ['👻', 'Ghost', 25] };
+const SLEEVE_NAMES = { ninja: 'Ninja Black', dragon: 'Dragon Scale', ice: 'Frost', neon: 'Neon Glow', gold: 'Golden Weapon', jade: 'Jade Temple', champion: 'Season Champion' };
+const VERSION = { holo: ['Holo', 'Holo Foil', 250], fullart: ['Full Art', 'Full Art', 150], gold: ['Gold', 'Gold', 100], shadow: ['Shadow', 'Shadow', 50], ghost: ['Ghost', 'Ghost', 25] }; // [badge, name, print run]
 
 let isAdmin = null;
 window.addEventListener('hashchange', route);
@@ -53,7 +53,7 @@ async function route() {
     return await serversPage();
   } catch (e) {
     if (e.status === 401) return loginScreen();
-    app.innerHTML = `<div class="empty" style="margin:40px 0">⚠️ ${esc(e.message)}</div>`;
+    app.innerHTML = `<div class="empty" style="margin:40px 0">${esc(e.message)}</div>`;
   }
 }
 
@@ -69,10 +69,10 @@ function shell(active, title, sub, body, side = '') {
   const u = Session.user;
   app.innerHTML = `<div class="layout"><aside class="sidebar">
       <div class="head"><img src="${avatarUrl(u.id, u.avatar)}" alt="">${esc(u.name)}</div>
-      <a href="#/servers" class="${active === 'servers' ? 'on' : ''}">🖥️ My servers</a>
-      <a href="#/collection" class="${active === 'collection' ? 'on' : ''}">🃏 My collection</a>
-      ${isAdmin ? `<a href="#/admin" class="${active === 'admin' ? 'on' : ''}">🛠️ Admin</a>` : ''}
-      <a href="leaderboards.html">🏆 Leaderboards</a>${side}</aside>
+      <a href="#/servers" class="${active === 'servers' ? 'on' : ''}">My servers</a>
+      <a href="#/collection" class="${active === 'collection' ? 'on' : ''}">My collection</a>
+      ${isAdmin ? `<a href="#/admin" class="${active === 'admin' ? 'on' : ''}">Admin</a>` : ''}
+      <a href="leaderboards.html">Leaderboards</a>${side}</aside>
     <main><h1 class="page-title">${title}</h1><p class="page-sub">${sub}</p>${body}</main></div>`;
 }
 
@@ -83,11 +83,11 @@ async function serversPage() {
     const icon = guildIcon(g.id, g.icon);
     return `<div class="server"><div class="bannerwrap"><div class="banner" style="background-image:url('${icon}');${icon ? '' : 'background:var(--card2)'}"></div></div>
       <div class="icon">${icon ? `<img src="${icon}" alt="">` : esc(g.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 3))}</div>
-      <h4 title="${esc(g.name)}">${esc(g.name)}</h4>${g.viaOwner ? '<span class="chip" title="You can manage this server because you are a bot owner">👑 bot owner access</span>' : ''}
+      <h4 title="${esc(g.name)}">${esc(g.name)}</h4>${g.viaOwner ? '<span class="chip" title="You can manage this server because you are a bot owner">bot owner</span>' : ''}
       ${g.botIn ? `<a class="btn primary small" href="#/server/${g.id}">Manage</a>`
         : `<a class="btn ghost small" target="_blank" rel="noopener" href="${me.inviteUrl}&guild_id=${g.id}&disable_guild_select=true">Add OpenBricks</a>`}</div>`;
   };
-  shell('servers', 'Select a server', me.admin ? 'Your servers, plus <b>every server OpenBricks is in</b> (👑 bot owner access).' : 'Servers where you have <b>Manage Server</b>.',
+  shell('servers', 'Select a server', me.admin ? 'Your servers, plus <b>every server OpenBricks is in</b> (marked <span class="chip">bot owner</span>).' : 'Servers where you have <b>Manage Server</b>.',
     me.guilds.length ? `<div class="servers">${me.guilds.map(card).join('')}</div>` : '<div class="empty">You don\'t manage any servers. Ask a server owner for Manage Server permission.</div>');
 }
 
@@ -96,7 +96,7 @@ async function serverPage(id) {
   const [data, mod] = await Promise.all([api(`/api/guilds/${id}`), api(`/api/guilds/${id}/mod`).catch(() => null)]);
   let saved = { ...data.settings };
   const icon = guildIcon(id, data.guild.icon);
-  const side = `<div class="label">${esc(data.guild.name)}</div>${MODULES.map((m) => `<a href="#/server/${id}" data-jump="${m.id}">${m.icon} ${m.name}</a>`).join('')}${mod ? `<a href="#/server/${id}" data-jump="mod">🛡️ Moderation</a>` : ''}`;
+  const side = `<div class="label">${esc(data.guild.name)}</div>${MODULES.map((m) => `<a href="#/server/${id}" data-jump="${m.id}">${m.name}</a>`).join('')}${mod ? `<a href="#/server/${id}" data-jump="mod">Moderation</a>` : ''}`;
   const chanOpts = (v) => `<option value="">Disabled</option>${data.channels.map((c) => `<option value="${c.id}" ${c.id === v ? 'selected' : ''}># ${esc(c.name)}</option>`).join('')}`;
   const field = (f) => {
     const v = saved[f.key];
@@ -107,7 +107,7 @@ async function serverPage(id) {
     return `<div class="field" ${f.type === 'text' ? 'style="grid-column:1/-1"' : ''}><label>${f.label}</label>${input}${f.help && f.type !== 'toggle' ? `<small>${f.help}</small>` : ''}</div>`;
   };
   shell('servers', `${icon ? `<img src="${icon}" style="width:44px;height:44px;border-radius:12px;display:inline-block;vertical-align:middle;margin-right:12px">` : ''}${esc(data.guild.name)}`,
-    'Changes apply right away after you save.', MODULES.map((m) => `<section class="panel" id="m-${m.id}"><h3>${m.icon} ${m.name}</h3><p class="desc">${m.desc}</p><div class="fields">${m.fields.map(field).join('')}</div></section>`).join('') + (mod ? modPanel(mod) : ''), side);
+    'Changes apply right away after you save.', MODULES.map((m) => `<section class="panel" id="m-${m.id}"><h3>${m.name}</h3><p class="desc">${m.desc}</p><div class="fields">${m.fields.map(field).join('')}</div></section>`).join('') + (mod ? modPanel(mod) : ''), side);
   document.querySelectorAll('[data-jump]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); $(`#m-${a.dataset.jump}`).scrollIntoView(); }));
   if (mod) modWire(id, mod);
 
@@ -124,7 +124,7 @@ async function serverPage(id) {
     const body = changes();
     if (!Object.keys(body).length) return;
     $('#save').disabled = true;
-    try { await api(`/api/guilds/${id}`, { method: 'PUT', body: JSON.stringify(body) }); saved = { ...saved, ...body }; bar.classList.remove('show'); toast('Settings saved ✅'); }
+    try { await api(`/api/guilds/${id}`, { method: 'PUT', body: JSON.stringify(body) }); saved = { ...saved, ...body }; bar.classList.remove('show'); toast('Settings saved '); }
     catch (e) { toast(e.message, 'bad'); }
     $('#save').disabled = false;
   };
@@ -139,7 +139,7 @@ const row = (main, sub, right) => `<div class="toggle-row"><div><b>${main}</b><s
 const actBtn = (act, label, m, ok = true, extra = '') => `<button class="btn ghost small" data-act="${act}" data-uid="${m.id}" data-name="${esc(m.name)}" ${extra} ${ok ? '' : 'disabled title="You don\'t have that permission"'}>${label}</button>`;
 
 function modPanel(mod) {
-  return `<section class="panel" id="m-mod"><h3>🛡️ Moderation</h3>
+  return `<section class="panel" id="m-mod"><h3>Moderation</h3>
     <p class="desc">Same rules as the bot's commands: you need the Discord permission, and your highest role must be above theirs. Every action is posted in your log channel.</p>
     <form id="modfind" class="fields"><div class="field" style="grid-column:1/-1"><label>Find a member</label><input id="modq" placeholder="Name or user ID" autocomplete="off"><small>Press Enter to search.</small></div></form>
     <div id="modres"></div>
@@ -152,7 +152,7 @@ function modPanel(mod) {
 function memberRow(m, p) {
   const timed = m.timedOutUntil && new Date(m.timedOutUntil) > new Date();
   return `<div class="toggle-row"><div style="display:flex;gap:10px;align-items:center"><img src="${avatarUrl(m.id, m.avatar)}" style="width:32px;height:32px;border-radius:50%" alt="">
-      <div><b>${esc(m.name)}</b><span class="m">@${esc(m.tag)} · ${m.id}${timed ? ' · 🔇 timed out' : ''}</span></div></div>
+      <div><b>${esc(m.name)}</b><span class="m">@${esc(m.tag)} · ${m.id}${timed ? ' · timed out' : ''}</span></div></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">${actBtn('warnings', 'Warnings', m)}${actBtn('warn', 'Warn', m)}${timed ? actBtn('untimeout', 'Remove timeout', m, p.timeout) : actBtn('timeout', 'Timeout', m, p.timeout)}${actBtn('kick', 'Kick', m, p.kick)}${actBtn('ban', 'Ban', m, p.ban)}</div></div>
     <div id="w-${m.id}"></div>`;
 }
@@ -164,7 +164,7 @@ async function showWarnings(id, uid, name) {
     const list = await api(`/api/guilds/${id}/warnings/${uid}`);
     box.innerHTML = `<div style="margin:0 0 12px 42px">${list.length
       ? list.map((w) => row(`#${w.id}`, `${esc(w.reason)} · ${when(w.ts)}`, actBtn('unwarn', 'Remove', { id: uid, name }, true, `data-wid="${w.id}"`))).join('')
-      : '<div class="empty">No warnings. 😇</div>'}</div>`;
+      : '<div class="empty">No warnings. </div>'}</div>`;
   } catch (e) { box.innerHTML = ''; toast(e.message, 'bad'); }
 }
 function modWire(id, mod) {
@@ -202,7 +202,7 @@ function modWire(id, mod) {
     btn.disabled = true;
     try {
       await api(`/api/guilds/${id}/mod`, { method: 'POST', body: JSON.stringify(body) });
-      toast(`${LABEL[act]} ${name}: done ✅`);
+      toast(`${LABEL[act]} ${name}: done `);
       if (act === 'unban') return btn.closest('.toggle-row').remove();
       await search();
       if (act === 'warn' || act === 'unwarn') showWarnings(id, uid, name);
@@ -227,7 +227,7 @@ const F = {
   confirm: { key: 'confirm', label: 'Type RESET to confirm', ph: 'RESET' },
 };
 const ADMIN = [
-  { group: '🤖 Bot', items: [
+  { group: 'Bot', items: [
     { action: 'stats', label: 'Bot stats', render: (d) => `<div class="kpis">${[['Servers', d.servers], ['Members', d.members], ['Cards collected', d.cards], ['Collectors', d.collectors], ['Uptime', `${Math.floor(d.uptimeMin / 60)}h ${d.uptimeMin % 60}m`]].map(([k, v]) => `<div class="kpi"><b>${typeof v === 'number' ? fmt(v) : esc(v)}</b><span>${k}</span></div>`).join('')}</div><p class="page-sub">Largest: ${esc(d.largest)}</p>` },
     { action: 'servers', label: 'Server list', render: (d) => `<div class="scroll">${d.map((g) => `<div class="toggle-row"><div><b>${esc(g.name)}</b><span class="m">${fmt(g.members)} members · ${g.id}</span></div></div>`).join('')}</div>` },
     { action: 'reloadconfig', label: 'Reload cards.json' },
@@ -235,22 +235,22 @@ const ADMIN = [
     { action: 'restart', label: 'Restart bot', danger: 'Restart the bot now?' },
     { action: 'shutdown', label: 'Shut down bot', danger: 'Shut the bot DOWN? It stays off until someone starts it again on the host.' },
   ] },
-  { group: '👤 Players', items: [
+  { group: 'Players', items: [
     { action: 'userinfo', label: 'User info', fields: [F.user], render: (d) => `<div class="toggle-row"><div style="display:flex;gap:12px;align-items:center"><img src="${avatarUrl(d.id, d.avatar)}" style="width:44px;height:44px;border-radius:50%" alt=""><div><b>${esc(d.tag)}</b><span class="m">${d.id} · account made ${new Date(d.created).toLocaleDateString()}</span></div></div></div>
-      <div class="kpis">${[['OBCoins', fmt(d.coins)], ['Cards', fmt(d.cards)], ['Pack cards', fmt(d.packCards)], ['Bot-banned', d.blacklisted ? '🚫 Yes' : 'No'], ['Jailed', d.jailedMs ? `🔒 ${Math.ceil(d.jailedMs / 60000)}m` : 'No']].map(([k, v]) => `<div class="kpi"><b>${v}</b><span>${k}</span></div>`).join('')}</div>` },
+      <div class="kpis">${[['OBCoins', fmt(d.coins)], ['Cards', fmt(d.cards)], ['Pack cards', fmt(d.packCards)], ['Bot-banned', d.blacklisted ? 'Yes' : 'No'], ['Jailed', d.jailedMs ? `${Math.ceil(d.jailedMs / 60000)}m` : 'No']].map(([k, v]) => `<div class="kpi"><b>${v}</b><span>${k}</span></div>`).join('')}</div>` },
     { action: 'coins', label: 'Manage coins', fields: [F.user, F.op(['add', 'remove']), F.amount] },
     { action: 'addcard', label: 'Add card', fields: [F.user, F.card, F.amount] },
     { action: 'removecard', label: 'Remove card', fields: [F.user, F.card, F.amount] },
     { action: 'botban', label: 'Bot ban / unban', fields: [F.user, F.op(['ban', 'unban']), F.reason] },
     { action: 'dm', label: 'DM a user', fields: [F.user, F.message] },
   ] },
-  { group: '🖥️ Servers', items: [
+  { group: 'Servers', items: [
     { action: 'invite', label: 'Generate invite', fields: [F.guild, F.channelOpt] },
     { action: 'announce', label: 'Server announcement', fields: [F.guild, F.channelOpt, F.message] },
     { action: 'webhook', label: 'Create webhook', fields: [F.guild, F.channel, F.name], render: (d) => `<p>Webhook URL (keep it secret):</p><code class="secret">${esc(d.url)}</code>` },
     { action: 'leave', label: 'Leave server', fields: [F.guild], danger: 'Make the bot LEAVE this server?' },
   ] },
-  { group: '🌍 Everyone', items: [
+  { group: 'Everyone', items: [
     { action: 'globalannounce', label: 'Global announcement', fields: [F.message], danger: 'Post this in EVERY server the bot is in?' },
     { action: 'broadcast', label: 'Broadcast DM to all users', fields: [F.message], danger: 'DM this to EVERY user of the bot? This takes a while.' },
     { action: 'giveaway', label: 'Mass giveaway', fields: [F.card, F.qty], danger: 'Give this card to EVERY collector?' },
@@ -284,16 +284,16 @@ function adminPage() {
   };
   const card = (a) => `<form class="panel admin-item" data-action="${a.action}"><h3>${a.label}</h3>${a.help ? `<p class="desc">${a.help}</p>` : ''}
     ${a.fields?.length ? `<div class="fields">${a.fields.map((f) => field(f, a)).join('')}</div>` : ''}
-    <button class="btn ${a.danger ? 'danger' : 'primary'} small" type="submit">${a.danger ? '⚠️ ' : ''}${a.label}</button><div class="out"></div></form>`;
-  shell('admin', '🛠️ Admin panel', 'Bot owners only. Same actions as <code>/admin</code> in Discord. The bot does each one within a few seconds and logs it.',
+    <button class="btn ${a.danger ? 'danger' : 'primary'} small" type="submit">${a.label}</button><div class="out"></div></form>`;
+  shell('admin', 'Admin panel', 'Bot owners only. Same actions as <code>/admin</code> in Discord. The bot does each one within a few seconds and logs it.',
     `<datalist id="srvlist"><option value="all">ALL servers</option></datalist>
     ${ADMIN.map((g) => `<h2 class="admin-group">${g.group}</h2><div class="admin-grid">${g.items.map(card).join('')}</div>`).join('')}
-    <section class="panel"><h3>📜 Recent admin actions <button class="btn ghost small" id="relog" type="button">Refresh</button></h3><div id="adminlog"><div class="spinner"></div></div></section>`);
+    <section class="panel"><h3>Recent admin actions <button class="btn ghost small" id="relog" type="button">Refresh</button></h3><div id="adminlog"><div class="spinner"></div></div></section>`);
 
   const loadLog = async () => {
     try {
       const rows = await api('/api/admin/log');
-      $('#adminlog').innerHTML = rows.length ? rows.map((r) => `<div class="toggle-row"><div><b>${{ done: '✅', error: '❌', expired: '⌛', pending: '⏳', running: '⚙️' }[r.status] || ''} ${esc(r.action)}</b><span class="m">${esc(r.text)} · by ${esc(r.adminId)}</span></div><span class="chip">${new Date(r.createdAt).toLocaleString()}</span></div>`).join('') : '<div class="empty">Nothing yet.</div>';
+      $('#adminlog').innerHTML = rows.length ? rows.map((r) => `<div class="toggle-row"><div><b><i class="dot st-${esc(r.status)}" title="${esc(r.status)}"></i>${esc(r.action)}</b><span class="m">${esc(r.text)} · by ${esc(r.adminId)}</span></div><span class="chip">${new Date(r.createdAt).toLocaleString()}</span></div>`).join('') : '<div class="empty">Nothing yet.</div>';
     } catch (e) { $('#adminlog').innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
   };
   $('#relog').onclick = loadLog;
@@ -311,10 +311,10 @@ function adminPage() {
     btn.disabled = true;
     try {
       const res = await runJob(a.action, params, out);
-      out.innerHTML = `<p class="ok">✅ ${esc(res.text)}</p>${a.render && res.data ? a.render(res.data) : ''}`;
+      out.innerHTML = `<p class="ok">${esc(res.text)}</p>${a.render && res.data ? a.render(res.data) : ''}`;
       if (a.action === 'servers') fillServers(res.data);
       loadLog();
-    } catch (err) { out.innerHTML = `<p class="bad">❌ ${esc(err.message)}</p>`; }
+    } catch (err) { out.innerHTML = `<p class="bad">${esc(err.message)}</p>`; }
     btn.disabled = false;
   };
   const fillServers = (list) => { $('#srvlist').innerHTML = `<option value="all">ALL servers</option>${list.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}`; };
@@ -336,7 +336,7 @@ async function collectionPage() {
     if (!owned) return `<div class="tcard locked"><img src="${img(c)}" alt="" loading="lazy"></div>`;
     const best = ['ghost', 'shadow', 'gold', 'fullart', 'holo', null].find((f) => owned.some((r) => r.finish === f));
     return `<div class="tcard r-${String(c.rarity).toLowerCase()}" data-card="${c.id}"><img src="${img(c, best)}" alt="${esc(c.name)}" loading="lazy">
-      <div class="badges">${owned.filter((r) => r.finish).map((r) => `<span>${VERSION[r.finish]?.[0] || ''}</span>`).join('')}</div>
+      <div class="badges">${owned.filter((r) => r.finish).map((r) => `<span class="v-${r.finish}">${VERSION[r.finish]?.[0] || ''}</span>`).join('')}</div>
       <div class="qty">×${owned.reduce((s, r) => s + r.n, 0)}</div></div>`;
   };
   const setHtml = sets.map((s) => {
@@ -353,7 +353,7 @@ async function collectionPage() {
       <div class="kpi"><b>${mine.rank ? mine.rank.rating : '—'}</b><span>Battle rating (${esc(mine.season)})</span></div>
       <div class="kpi"><b>${mine.sleeve ? esc(SLEEVE_NAMES[mine.sleeve] || mine.sleeve) : '—'}</b><span>Equipped sleeve</span></div>
     </div>
-    ${deck.length ? `<section class="panel"><h3>⚔️ Battle deck</h3><p class="desc">Change it in Discord with <code>!deck set</code>.</p><div class="cards" style="grid-template-columns:repeat(3,minmax(0,150px))">${deck.map(tile).join('')}</div></section>` : ''}
+    ${deck.length ? `<section class="panel"><h3>Battle deck</h3><p class="desc">Change it in Discord with <code>!deck set</code>.</p><div class="cards" style="grid-template-columns:repeat(3,minmax(0,150px))">${deck.map(tile).join('')}</div></section>` : ''}
     ${cards.length ? setHtml : '<div class="empty">The card list isn\'t published yet.</div>'}`);
   app.onclick = (e) => {
     const t = e.target.closest('[data-card]');
@@ -363,7 +363,7 @@ async function collectionPage() {
     m.className = 'modal';
     m.innerHTML = `<div class="box"><img src="${img(c, owned.find((r) => r.finish)?.finish)}" alt="">
       <div><h2 style="margin:0">${esc(c.name)}</h2><p style="color:var(--mute);margin:4px 0 16px">${esc(c.title)}<br>${esc(c.rarity)} · ${esc(c.set)} · Card ${c.number} of ${c.total}</p>
-      ${owned.map((r) => `<div class="toggle-row"><div><b>${r.finish ? `${VERSION[r.finish][0]} ${VERSION[r.finish][1]}` : 'Original'}</b><span class="m">×${r.n}</span></div>
+      ${owned.map((r) => `<div class="toggle-row"><div><b>${r.finish ? VERSION[r.finish][1] : 'Original'}</b><span class="m">×${r.n}</span></div>
         <span class="chip">best #${r.serial ?? '?'}${r.finish ? ` / ${VERSION[r.finish][2]}` : ''}</span></div>`).join('')}
       <p style="margin-top:16px"><code>!flex ${esc(c.name.toLowerCase())}</code></p></div></div>`;
     m.onclick = (ev) => { if (ev.target === m) m.remove(); };

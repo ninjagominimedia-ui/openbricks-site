@@ -7,21 +7,21 @@
 <meta name="theme-color" content="#0d1017">
 <title>Leaderboards — OpenBricks</title>
 <meta name="description" content="Top OpenBricks players: the biggest card collectors, the best battlers this season and the richest ninjas.">
-<link rel="stylesheet" href="assets/style.css?v=20261107e">
+<link rel="stylesheet" href="assets/style.css?v=20261107f">
 </head>
 <body>
 <div class="wrap" style="padding:40px 24px 80px">
   <h1 class="page-title">Leaderboards</h1>
   <p class="page-sub">The best collectors, fighters and richest ninjas across every server.</p>
   <div class="tabs">
-    <button data-tab="collectors" class="on">🃏 Collectors</button>
-    <button data-tab="battle">⚔️ Battle season</button>
-    <button data-tab="rich">💰 Richest</button>
+    <button data-tab="collectors" class="on">Collectors</button>
+    <button data-tab="battle">Battle season</button>
+    <button data-tab="rich">Richest</button>
   </div>
   <div id="board"><div class="spinner"></div></div>
 </div>
-<script src="assets/config.js?v=20261107e"></script>
-<script src="assets/common.js?v=20261107e"></script>
+<script src="assets/config.js?v=20261107f"></script>
+<script src="assets/common.js?v=20261107f"></script>
 <script>
   renderNav('lb'); renderFooter();
   const winRate = (r) => Math.round((r.wins / Math.max(1, r.wins + r.losses)) * 100);
@@ -30,7 +30,7 @@
     collectors: { main: (r) => r.unique_cards, unit: 'unique cards', sub: (r) => `${fmt(r.total)} total · ${fmt(r.specials)} special`,
       cols: [['Total', (r) => fmt(r.total)], ['Specials', (r) => fmt(r.specials)]], intro: () => 'Most different pack cards collected. Special versions break ties.' },
     battle: { main: (r) => r.rating, unit: 'rating', sub: (r) => `${r.wins}W / ${r.losses}L · ${winRate(r)}%`,
-      cols: [['W / L', (r) => `${r.wins} / ${r.losses}`], ['Win %', (r) => `${winRate(r)}%`]], intro: () => `Season ${esc(data.season)} · top 3 win coins, #1 gets the 👑 Champion sleeve.` },
+      cols: [['W / L', (r) => `${r.wins} / ${r.losses}`], ['Win %', (r) => `${winRate(r)}%`]], intro: () => `Season ${esc(data.season)} · top 3 win coins, #1 gets the Champion sleeve.` },
     rich: { main: (r) => r.coins, unit: 'OBCoins', sub: () => 'wallet balance', cols: [], intro: () => 'Biggest OBCoins wallets.' },
   };
   let data = null, tab = 'collectors';
@@ -38,7 +38,7 @@
   const name = (r) => esc(r.user?.name || 'Unknown');
   const podium = (rows, b) => {
     const slot = (r, i) => !r ? '<div></div>' : `<div class="p ${i === 0 ? 'first' : ''} ${r.userId === me ? 'mine' : ''}" style="--c:${['#ffd700', '#c0c0c0', '#cd7f32'][i]}">
-      ${i === 0 ? '<div class="crown">👑</div>' : ''}<div class="rank">#${i + 1}</div>
+      <div class="rank">#${i + 1}</div>
       <img src="${avatarUrl(r.userId, r.user?.avatar, 128)}" alt=""><div class="name" title="${name(r)}">${name(r)}${r.userId === me ? ' <span class="you">you</span>' : ''}</div>
       <div class="val">${fmt(b.main(r))}</div><div class="sub">${b.unit} · ${b.sub(r)}</div></div>`;
     return `<div class="podium">${slot(rows[1], 1)}${slot(rows[0], 0)}${slot(rows[2], 2)}</div>`;
@@ -49,7 +49,7 @@
     const top = Math.max(1, b.main(rows[0])), mine = rows.findIndex((r) => r.userId === me);
     const rest = rows.slice(3);
     $('#board').innerHTML = `<p class="page-sub">${b.intro()}</p>${podium(rows, b)}
-      ${me ? `<p class="page-sub" style="margin:0 0 14px">${mine >= 0 ? `📍 You're <b>#${mine + 1}</b>${mine > 0 ? ` · ${fmt(b.main(rows[mine - 1]) - b.main(rows[mine]))} behind #${mine}` : ' 👑'}` : `📍 You're not in the top ${rows.length} yet.`}</p>` : ''}
+      ${me ? `<p class="page-sub" style="margin:0 0 14px">${mine >= 0 ? `You're <b>#${mine + 1}</b>${mine > 0 ? ` · ${fmt(b.main(rows[mine - 1]) - b.main(rows[mine]))} behind #${mine}` : ' (top spot)'}` : `You're not in the top ${rows.length} yet.`}</p>` : ''}
       ${rest.length ? `<table class="lb"><thead><tr><th>#</th><th>Player</th><th>${b.unit}</th>${b.cols.map(([h]) => `<th class="hide-sm">${h}</th>`).join('')}</tr></thead><tbody>
       ${rest.map((r, i) => `<tr class="${r.userId === me ? 'me' : ''}"><td class="pos">#${i + 4}</td>
         <td><div class="who"><img src="${avatarUrl(r.userId, r.user?.avatar)}" alt="">${name(r)}${r.userId === me ? ' <span class="you">you</span>' : ''}</div></td>
