@@ -41,6 +41,8 @@ export default {
       const g = url.pathname.match(/^\/api\/guilds\/(\d{17,20})$/);
       if (g && req.method === 'GET') return json(env, await guildSettings(env, session, g[1]));
       if (g && req.method === 'PUT') return json(env, await saveGuild(env, session, g[1], await req.json()));
+      // these use the bot's token or queue bot work: cap them per person so nobody can get the bot rate-limited
+      if (url.pathname.startsWith('/api/guilds/') || (url.pathname === '/api/admin/jobs' && req.method === 'POST')) rateLimit(session.uid);
       if (url.pathname === '/api/admin/jobs' && req.method === 'POST') return json(env, await adminQueue(env, session, await req.json()));
       if (url.pathname === '/api/admin/log') return json(env, await adminLog(env, session));
       const job = url.pathname.match(/^\/api\/admin\/jobs\/(\d+)$/);
@@ -81,6 +83,13 @@ function json(env, data, maxAge = 0, status = 200) {
   }));
 }
 const fail = (status, message) => Object.assign(new Error(message), { status });
+// shortcut: counts per Worker instance (Cloudflare runs several), so the real cap is a few times higher; use a Durable Object if abuse shows up
+const hits = new Map(); // userId -> { start, n }
+function rateLimit(uid, max = 40, windowMs = 60e3) {
+  const now = Date.now(), h = hits.get(uid);
+  if (!h || now - h.start > windowMs) { hits.set(uid, { start: now, n: 1 }); if (hits.size > 5000) hits.clear(); return; }
+  if (++h.n > max) throw fail(429, 'Too many requests. Wait a minute and try again.');
+}
 const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const b64urlText = (s) => b64url(new TextEncoder().encode(s));
 const fromB64url = (s) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)));
