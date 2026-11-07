@@ -29,6 +29,22 @@ code { background: var(--card2); border: 1px solid var(--line); padding: 1px 6px
 .menu a { display: block; padding: 8px 12px; border-radius: 8px; color: var(--text); font-weight: 500; }
 .menu a:hover { background: var(--card2); }
 @media (max-width: 760px) { .nav .links { display: none; } }
+/* phone menu */
+.burger { display: none; width: 40px; height: 40px; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); cursor: pointer; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.burger span { display: block; width: 18px; height: 2px; background: var(--text); border-radius: 2px; transition: transform .2s, opacity .2s; }
+.burger.open span:nth-child(1) { transform: translateY(6px) rotate(45deg); } .burger.open span:nth-child(2) { opacity: 0; } .burger.open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+.mob-only { display: none !important; }
+@media (max-width: 760px) {
+  .burger { display: inline-flex; }
+  .desk-only { display: none !important; }
+  .nav .wrap { gap: 12px; }
+  .nav .right { margin-left: auto; }
+  .nav .links.open { display: flex; flex-direction: column; gap: 0; position: absolute; top: 64px; left: 0; right: 0; padding: 6px 16px 14px; background: var(--bg2); border-bottom: 1px solid var(--line); box-shadow: var(--shadow); }
+  .nav .links.open a { padding: 13px 8px; border-bottom: 1px solid var(--line); font-size: 16px; }
+  .nav .links.open a:last-child { border-bottom: 0; }
+  .nav .links.open .mob-only { display: block !important; color: var(--accent2); }
+  .me { max-width: 150px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+}
 
 /* buttons */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 20px; border-radius: 10px; border: 1px solid transparent; font: 600 15px/1 inherit; cursor: pointer; transition: transform .08s, filter .15s, background .15s; color: #fff; }
@@ -230,3 +246,22 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 code.secret { display: block; padding: 10px; word-break: break-all; user-select: all; }
 .btn.danger { background: var(--bad); color: #fff; border-color: var(--bad); }
 .btn.danger:hover { filter: brightness(1.1); }
+
+/* nothing may push the page sideways: long command names wrap, grid columns may shrink */
+body { overflow-x: clip; }
+.layout > * { min-width: 0; }
+.cmd .name, .cmd .alias, .doc code, .doc a { overflow-wrap: anywhere; }
+img, video { max-width: 100%; }
+/* commands page on phones: module list becomes wrapping chips instead of a tall column */
+@media (max-width: 900px) {
+  #cats { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; }
+  #cats .label { width: 100%; padding: 2px 4px 4px; }
+  #cats a { padding: 6px 10px; background: var(--card2); font-size: 14px; }
+  #cats .count { margin-left: 4px; }
+}
+@media (max-width: 480px) {
+  .wrap { padding: 0 16px; }
+  .page-title { font-size: 26px; }
+  .hero h1 { font-size: 34px; }
+  .btn.big { width: 100%; justify-content: center; }
+}

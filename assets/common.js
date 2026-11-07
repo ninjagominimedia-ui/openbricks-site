@@ -39,15 +39,23 @@ function renderNav(active) {
   const header = document.createElement('header');
   header.className = 'nav';
   header.innerHTML = `<div class="wrap">
-    <a class="brand" href="index.html"><span class="logo">🃏</span>OpenBricks</a>
-    <nav class="links">${link('commands.html', 'Commands', 'commands')}${link('leaderboards.html', 'Leaderboards', 'lb')}${link('dashboard.html', 'Dashboard', 'dash')}${link(OB.SUPPORT, 'Support', '')}</nav>
+    <a class="brand" href="index.html"><img class="logo" src="assets/favicon.svg" alt="" width="34" height="34">OpenBricks</a>
+    <nav class="links" id="navlinks">${link('commands.html', 'Commands', 'commands')}${link('leaderboards.html', 'Leaderboards', 'lb')}${link('dashboard.html', 'Dashboard', 'dash')}${link(OB.SUPPORT, 'Support', '')}<a class="mob-only" href="${OB.INVITE}" target="_blank" rel="noopener">Add to Discord</a></nav>
     <div class="right">
-      <a class="btn small ghost" href="${OB.INVITE}" target="_blank" rel="noopener">Add to Discord</a>
+      <a class="btn small ghost desk-only" href="${OB.INVITE}" target="_blank" rel="noopener">Add to Discord</a>
       ${u ? `<div class="me" id="me"><img src="${avatarUrl(u.id, u.avatar)}" alt="">${esc(u.name)}
           <div class="menu" hidden><a href="dashboard.html#/servers">My servers</a><a href="dashboard.html#/collection">My collection</a><a href="#" id="logout">Log out</a></div></div>`
         : `<a class="btn small discord" href="${loginUrl()}">Login</a>`}
+      <button class="burger" id="burger" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="navlinks"><span></span><span></span><span></span></button>
     </div></div>`;
   document.body.prepend(header);
+  // phone menu: the links fold into a dropdown under the bar
+  const burger = $('#burger'), links = $('#navlinks');
+  const setOpen = (open) => { links.classList.toggle('open', open); burger.classList.toggle('open', open); burger.setAttribute('aria-expanded', open); burger.setAttribute('aria-label', open ? 'Close menu' : 'Open menu'); };
+  burger.onclick = (e) => { e.stopPropagation(); setOpen(!links.classList.contains('open')); };
+  links.onclick = () => setOpen(false);
+  document.addEventListener('click', (e) => { if (!header.contains(e.target)) setOpen(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setOpen(false); });
   const me = $('#me');
   if (me) {
     me.onclick = (e) => { if (!e.target.closest('.menu')) $('.menu', me).hidden = !$('.menu', me).hidden; };
@@ -60,7 +68,7 @@ function renderFooter() {
   const f = document.createElement('footer');
   f.className = 'footer';
   f.innerHTML = `<div class="wrap">
-    <div><a class="brand" href="index.html"><span class="logo">🃏</span>OpenBricks</a><p style="max-width:320px">The Ninjago card collecting bot for Discord. Not affiliated with LEGO or Discord.</p><p>© ${new Date().getFullYear()} OpenBricks · Credits to Lite for some ideas</p></div>
+    <div><a class="brand" href="index.html"><img class="logo" src="assets/favicon.svg" alt="" width="34" height="34">OpenBricks</a><p style="max-width:320px">The Ninjago card collecting bot for Discord. Not affiliated with LEGO or Discord.</p><p>© ${new Date().getFullYear()} OpenBricks · Credits to Lite for some ideas</p></div>
     <div class="cols">
       <div><h4>Bot</h4><a href="${OB.INVITE}" target="_blank" rel="noopener">Add to Discord</a><a href="commands.html">Commands</a><a href="leaderboards.html">Leaderboards</a></div>
       <div><h4>Account</h4><a href="dashboard.html">Dashboard</a><a href="dashboard.html#/collection">My collection</a><a href="${OB.SUPPORT}">Support server</a></div>

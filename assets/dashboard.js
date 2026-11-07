@@ -64,6 +64,8 @@ function loginScreen() {
 }
 
 function shell(active, title, sub, body, side = '') {
+  const t = document.createElement('div'); t.innerHTML = title; // title is already-escaped markup: take its plain text for the tab
+  document.title = `${t.textContent.trim()} — OpenBricks`;
   const u = Session.user;
   app.innerHTML = `<div class="layout"><aside class="sidebar">
       <div class="head"><img src="${avatarUrl(u.id, u.avatar)}" alt="">${esc(u.name)}</div>
