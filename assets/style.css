@@ -293,3 +293,6 @@ code.secret { display: block; padding: 10px; word-break: break-all; user-select:
 .lb.rs .m { display: block; color: var(--mute); font-size: 13px; }
 .why { margin: 0; padding-left: 16px; color: var(--mute); font-size: 14px; }
 .out .verdict { color: var(--text); }
+.you.gm { background: var(--accent2); color: #1a1208; }
+.tabs.sub { margin: -8px 0 18px; }
+.tabs.sub button { font-size: 13px; padding: 7px 11px; }

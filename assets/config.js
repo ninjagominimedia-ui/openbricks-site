@@ -4,5 +4,5 @@ window.OB_CONFIG = {
   CLIENT_ID: '1148315577014820904',
   INVITE: 'https://discord.com/oauth2/authorize?client_id=1148315577014820904&permissions=1512634182855&scope=bot%20applications.commands',
   SUPPORT: 'https://discord.gg/zEKVDfaMRP',
-  EMAIL: 'md8884032@gmail.com',
+  EMAIL: 'david@open-bricks.site',
 };

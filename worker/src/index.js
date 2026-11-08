@@ -138,7 +138,8 @@ const botAuth = (env) => `Bot ${env.BOT_TOKEN}`;
 const arg = (v) => (v === null || v === undefined ? { type: 'null' }
   : typeof v === 'number' ? (Number.isInteger(v) ? { type: 'integer', value: String(v) } : { type: 'float', value: v })
     : { type: 'text', value: String(v) });
-async function sql(env, stmts) {
+// loose: a failing statement (e.g. a table the bot hasn't made yet) gives [] instead of failing the whole batch
+async function sql(env, stmts, loose = false) {
   const base = env.TURSO_URL.replace(/^libsql:\/\//, 'https://').replace(/\/$/, '');
   const res = await fetch(`${base}/v2/pipeline`, {
     method: 'POST', headers: { Authorization: `Bearer ${env.TURSO_TOKEN}`, 'Content-Type': 'application/json' },
@@ -147,7 +148,7 @@ async function sql(env, stmts) {
   if (!res.ok) throw fail(502, `Database ${res.status}`);
   const out = await res.json();
   return out.results.slice(0, stmts.length).map((r) => {
-    if (r.type === 'error') throw fail(500, 'Database: ' + r.error.message);
+    if (r.type === 'error') { if (loose) return []; throw fail(500, 'Database: ' + r.error.message); }
     const { cols, rows } = r.response.result;
     return rows.map((row) => Object.fromEntries(cols.map((c, i) => [c.name, row[i].type === 'null' ? null : row[i].type === 'integer' ? Number(row[i].value) : row[i].value])));
   });
@@ -531,32 +532,60 @@ async function collection(env, s) {
   return { cards, deck: kvv.deck || [], sleeve: kvv.sleeve || null, sleeves: sleeves.map((r) => r.sleeve), rank: rank[0] || null, season };
 }
 
-const userCache = new Map(); // id -> { name, avatar, at }
-async function users(env, ids) {
-  const out = {};
-  await Promise.all([...new Set(ids)].map(async (id) => {
-    const c = userCache.get(id);
-    if (c && Date.now() - c.at < 36e5) { out[id] = c; return; }
-    try { const u = await discord(`/users/${id}`, botAuth(env)); out[id] = { name: u.global_name || u.username, avatar: u.avatar, at: Date.now() }; userCache.set(id, out[id]); }
-    catch { out[id] = { name: 'Unknown user', avatar: null }; }
+// Names survive Worker restarts in kv web:names, so a refresh only asks Discord about people it hasn't looked up for a day.
+// A free Worker may make 50 subrequests per request: at most NAME_LOOKUPS go to Discord, the rest fill in on later refreshes.
+const NAME_LOOKUPS = 30, NAME_TTL = 864e5;
+async function users(env, ids, stored) {
+  const now = Date.now(), out = {}, todo = [];
+  for (const id of new Set(ids)) { const c = stored[id]; if (c && now - c.at < NAME_TTL) out[id] = c; else todo.push(id); }
+  let changed = false;
+  await Promise.all(todo.slice(0, NAME_LOOKUPS).map(async (id) => {
+    try { const u = await discord(`/users/${id}`, botAuth(env)); out[id] = stored[id] = { name: u.global_name || u.username, avatar: u.avatar, at: now }; changed = true; }
+    catch { /* keeps the old name below, or Unknown */ }
   }));
+  for (const id of todo) out[id] ||= stored[id] || { name: 'Unknown player', avatar: null };
+  if (changed) {
+    for (const k of Object.keys(stored)) if (now - stored[k].at > 30 * NAME_TTL) delete stored[k]; // people who left every board
+    await kvPut(env, 'web:names', stored).catch(() => {});
+  }
   return out;
 }
 async function leaderboards(env) {
   const season = new Date().toISOString().slice(0, 7);
-  const run = async (q, a = []) => { try { return await one(env, q, a); } catch { return []; } }; // missing table = empty list
-  const [collectors, battle, rich] = await Promise.all([
-    run('SELECT userId, COUNT(DISTINCT cardId) AS unique_cards, COUNT(*) AS total, SUM(finish IS NOT NULL) AS specials FROM pack_cards GROUP BY userId ORDER BY unique_cards DESC, specials DESC LIMIT 25'),
-    run('SELECT userId, rating, wins, losses FROM battle_stats WHERE season=? AND (wins+losses)>0 ORDER BY rating DESC LIMIT 25', [season]),
-    run('SELECT userId, nfcoins AS coins FROM economy ORDER BY nfcoins DESC LIMIT 25'),
-  ]);
-  const ids = [...new Set([...collectors, ...battle, ...rich].map((r) => r.userId))];
-  const [names, nickRows] = await Promise.all([users(env, ids),
-    ids.length ? run(`SELECT key, value FROM kv_store WHERE key IN (${ids.map(() => '?').join(',')})`, ids.map((id) => `nick:${id}`)) : []]);
+  const Q = { // every board in one database round trip
+    collectors: ['SELECT userId, COUNT(DISTINCT cardId) AS unique_cards, COUNT(*) AS total, SUM(finish IS NOT NULL) AS specials FROM pack_cards GROUP BY userId ORDER BY unique_cards DESC, specials DESC LIMIT 25'],
+    completion: ['SELECT userId, COUNT(DISTINCT cardName) AS unique_cards, SUM(quantity) AS total FROM inventory WHERE quantity>0 GROUP BY userId ORDER BY unique_cards DESC, total DESC LIMIT 25'],
+    cards: ['SELECT userId, SUM(quantity) AS total, COUNT(DISTINCT cardName) AS unique_cards FROM inventory WHERE quantity>0 GROUP BY userId ORDER BY total DESC LIMIT 25'],
+    catchers: ['SELECT userId, COUNT(*) AS n FROM catches WHERE timestamp>=? GROUP BY userId ORDER BY n DESC LIMIT 25', [Date.now() - 7 * 864e5]],
+    battle: ['SELECT userId, rating, wins, losses FROM battle_stats WHERE season=? AND (wins+losses)>0 ORDER BY rating DESC LIMIT 25', [season]],
+    battleAll: ['SELECT userId, SUM(wins) AS wins, SUM(losses) AS losses, MAX(rating) AS best FROM battle_stats GROUP BY userId HAVING SUM(wins)>0 ORDER BY wins DESC, best DESC LIMIT 25'],
+    rich: ['SELECT userId, nfcoins AS coins FROM economy WHERE nfcoins>0 ORDER BY nfcoins DESC LIMIT 25'],
+    sellers: ["SELECT sellerId AS userId, COUNT(*) AS n, SUM(price) AS v FROM secondhand WHERE status='sold' GROUP BY sellerId ORDER BY n DESC, v DESC LIMIT 25"],
+    games: ['SELECT statKey, userId, wins FROM (SELECT statKey, userId, wins, ROW_NUMBER() OVER (PARTITION BY statKey ORDER BY wins DESC) AS rn FROM game_stats WHERE wins>0) WHERE rn<=10 ORDER BY statKey, wins DESC'],
+    clans: ['SELECT c.name, c.ownerId AS userId, c.level, c.xp, c.wins, COUNT(m.userId) AS members FROM clans c LEFT JOIN clan_members m ON m.clanId=c.id GROUP BY c.id ORDER BY c.level DESC, c.xp DESC LIMIT 25'],
+    exam: ["SELECT key, value FROM kv_store WHERE key LIKE 'exam:%'"],
+    nicks: ["SELECT key, value FROM kv_store WHERE key LIKE 'nick:%'"],
+    names: ["SELECT value FROM kv_store WHERE key='web:names'"],
+  };
+  const keys = Object.keys(Q);
+  const r = Object.fromEntries((await sql(env, keys.map((k) => Q[k]), true)).map((rows, i) => [keys[i], rows]));
+  const parse = (v) => { try { return JSON.parse(v); } catch { return null; } };
+  // the bot's Ninjago Master Exam: kv exam:<uid>, finished ones only; best score, then fastest, then fewest hints
+  const exam = r.exam.map((x) => [x.key.slice(5), parse(x.value)]).filter(([, s]) => s?.s === 'done')
+    .map(([userId, s]) => ({ userId, score: s.score, correct: s.correct, gm: !!s.gm, bonus: !!s.bonus, hints: 5 - s.hints, secs: Math.round((s.finishedAt - s.startedAt) / 1000) }))
+    .sort((a, b) => b.score - a.score || a.secs - b.secs || a.hints - b.hints).slice(0, 25);
+  const games = {};
+  for (const g of r.games) (games[g.statKey] ||= []).push({ userId: g.userId, wins: g.wins });
+  const lists = { collectors: r.collectors, completion: r.completion, cards: r.cards, catchers: r.catchers, battle: r.battle, battleAll: r.battleAll, rich: r.rich, sellers: r.sellers, clans: r.clans, exam };
+  const ids = [...Object.values(lists), ...Object.values(games)].flat().map((x) => x.userId);
+  const names = await users(env, ids, parse(r.names[0]?.value) || {});
   // the name people picked with the bot's !nickname wins over their Discord name
-  const nicks = Object.fromEntries(nickRows.map((r) => { try { return [r.key.slice(5), JSON.parse(r.value)]; } catch { return [r.key.slice(5), null]; } }));
-  const withUser = (rows) => rows.map((r) => ({ ...r, user: { ...names[r.userId], name: nicks[r.userId] || names[r.userId]?.name } }));
-  return { season, collectors: withUser(collectors), battle: withUser(battle), rich: withUser(rich) };
+  const nicks = Object.fromEntries(r.nicks.map((x) => [x.key.slice(5), parse(x.value)]));
+  const withUser = (rows) => rows.map((x) => ({ ...x, user: { avatar: names[x.userId]?.avatar ?? null, name: nicks[x.userId] || names[x.userId]?.name } }));
+  const out = { season };
+  for (const [k, rows] of Object.entries(lists)) out[k] = withUser(rows);
+  out.games = Object.fromEntries(Object.entries(games).map(([k, rows]) => [k, withUser(rows)]));
+  return out;
 }
 async function publicStats(env) {
   const [servers, counts] = await Promise.all([
