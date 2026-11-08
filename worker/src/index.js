@@ -559,7 +559,9 @@ async function leaderboards(env) {
     catchers: ['SELECT userId, COUNT(*) AS n FROM catches WHERE timestamp>=? GROUP BY userId ORDER BY n DESC LIMIT 25', [Date.now() - 7 * 864e5]],
     battle: ['SELECT userId, rating, wins, losses FROM battle_stats WHERE season=? AND (wins+losses)>0 ORDER BY rating DESC LIMIT 25', [season]],
     battleAll: ['SELECT userId, SUM(wins) AS wins, SUM(losses) AS losses, MAX(rating) AS best FROM battle_stats GROUP BY userId HAVING SUM(wins)>0 ORDER BY wins DESC, best DESC LIMIT 25'],
-    rich: ['SELECT userId, nfcoins AS coins FROM economy WHERE nfcoins>0 ORDER BY nfcoins DESC LIMIT 25'],
+    // wallet + bank: banked coins still count (the bot's shops spend them directly)
+    rich: [`SELECT * FROM (SELECT u.userId, COALESCE(e.nfcoins,0) AS wallet, COALESCE(b.balance,0) AS bank, COALESCE(e.nfcoins,0)+COALESCE(b.balance,0) AS coins
+      FROM (SELECT userId FROM economy UNION SELECT userId FROM bank) u LEFT JOIN economy e ON e.userId=u.userId LEFT JOIN bank b ON b.userId=u.userId) WHERE coins>0 ORDER BY coins DESC LIMIT 25`],
     sellers: ["SELECT sellerId AS userId, COUNT(*) AS n, SUM(price) AS v FROM secondhand WHERE status='sold' GROUP BY sellerId ORDER BY n DESC, v DESC LIMIT 25"],
     games: ['SELECT statKey, userId, wins FROM (SELECT statKey, userId, wins, ROW_NUMBER() OVER (PARTITION BY statKey ORDER BY wins DESC) AS rn FROM game_stats WHERE wins>0) WHERE rn<=10 ORDER BY statKey, wins DESC'],
     clans: ['SELECT c.name, c.ownerId AS userId, c.level, c.xp, c.wins, COUNT(m.userId) AS members FROM clans c LEFT JOIN clan_members m ON m.clanId=c.id GROUP BY c.id ORDER BY c.level DESC, c.xp DESC LIMIT 25'],
