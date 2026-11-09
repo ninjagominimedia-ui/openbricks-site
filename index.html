@@ -11,14 +11,14 @@
 <meta property="og:title" content="OpenBricks — Ninjago card bot for Discord">
 <meta property="og:description" content="Catch cards, open packs, battle with elements, climb the leaderboards.">
 <link rel="preload" href="assets/fonts/ndr.otf" as="font" type="font/otf" crossorigin>
-<link rel="stylesheet" href="assets/style.css?v=20261109a">
+<link rel="stylesheet" href="assets/style.css?v=20261109b">
 </head>
 <body>
 <section class="hero">
   <div class="wrap">
     <div>
       <h1>Ninjago cards, <em>right in your Discord</em></h1>
-      <p>Cards drop while people chat. Whoever types the name first keeps it. There are 150 cards to find, every one comes in six versions, and some of those versions only exist 25 times.</p>
+      <p>Cards drop while people chat. Whoever types the name first keeps it. There are <span id="s-cards">226</span> cards to find, every one comes in six versions, and some of those versions only exist 25 times.</p>
       <div class="cta">
         <a class="btn primary big" id="invite" target="_blank" rel="noopener">Add to Discord</a>
         <a class="btn ghost big" href="commands.html">See all commands</a>
@@ -39,7 +39,6 @@
 
 <section class="section">
   <div class="wrap">
-    <p class="kicker">Six versions of every card</p>
     <h2>Same Sensei Wu, very different value</h2>
     <p class="lead">Packs can hand you a special version instead of the normal card. Each one is numbered, and once its print run is gone nobody can pull it again.</p>
     <div class="versions-row">
@@ -57,7 +56,6 @@
 <section class="section">
   <div class="wrap twocol">
     <div>
-      <p class="kicker">What's in it</p>
       <h2>More than catching cards</h2>
       <p class="lead">Everything runs on one currency, OBCoins, and one collection, so what you do in one part counts everywhere else.</p>
       <ul class="featlist">
@@ -70,15 +68,14 @@
         <li><b>Server tools</b><span>Welcome messages, logs, starboard and moderation. Set them up on the dashboard.</span></li>
       </ul>
     </div>
-    <aside class="aside-box">
-      <h3>Setup takes a minute</h3>
-      <ol class="steps">
-        <li><b>Add the bot</b>Use the button at the top of this page.</li>
-        <li><b>Pick a spawn channel</b>Type <code>!setspawnchannel #channel</code>, or choose it on the dashboard.</li>
-        <li><b>Start chatting</b>Cards show up as people talk. Try <code>!buypack</code> and <code>!battle</code>.</li>
-      </ol>
-      <a class="btn ghost" href="dashboard.html" style="width:100%">Open the dashboard</a>
-    </aside>
+    <figure class="dc" aria-label="What a pack opening looks like in Discord">
+      <div class="dc-top"><span>#</span>card-pulls</div>
+      <div class="dc-msg"><img class="av" src="https://cdn.discordapp.com/embed/avatars/2.png" alt=""><div><b>jayfan_07</b><span class="t">Today at 19:42</span><p><code>!buypack</code></p></div></div>
+      <div class="dc-msg"><img class="av" src="assets/favicon.svg" alt=""><div><b class="bot">OpenBricks</b><span class="app">APP</span><span class="t">Today at 19:42</span>
+        <div class="dc-embed"><b>Garmadon</b><p>Mythical · NRG · card 7 of 10</p><img src="cards/nrg-7.webp" alt="" width="180" height="248" loading="lazy"></div></div></div>
+      <div class="dc-msg"><img class="av" src="https://cdn.discordapp.com/embed/avatars/2.png" alt=""><div><b>jayfan_07</b><span class="t">Today at 19:43</span><p>no way. first mythical ever</p></div></div>
+      <figcaption>Packs, catches and trades all happen in your server. The website is for looking at what you've got.</figcaption>
+    </figure>
   </div>
 </section>
 
@@ -86,14 +83,14 @@
   <div class="wrap">
     <div>
       <h2>Free, with no premium tier</h2>
-      <p>Every feature works in every server.</p>
+      <p>Add it, run <code>!setspawnchannel #channel</code>, and cards start dropping while people talk.</p>
     </div>
     <a class="btn primary big" id="invite2" target="_blank" rel="noopener">Add OpenBricks to your server</a>
   </div>
 </section>
 
-<script src="assets/config.js?v=20261109a"></script>
-<script src="assets/common.js?v=20261109a"></script>
+<script src="assets/config.js?v=20261109b"></script>
+<script src="assets/common.js?v=20261109b"></script>
 <script>
   renderNav('home'); renderFooter();
   $('#invite').href = $('#invite2').href = OB.INVITE;
@@ -102,6 +99,7 @@
     const set = (id, v) => { if (v != null) $(id).textContent = fmt(v); };
     set('#s-servers', s.servers); set('#s-players', s.players); set('#s-caught', s.cardsCaught);
   }).catch(() => {});
+  fetch('data/cards.json').then((r) => r.json()).then((c) => { $('#s-cards').textContent = c.length; }).catch(() => {});
 </script>
 </body>
 </html>

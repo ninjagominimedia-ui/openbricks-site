@@ -328,10 +328,14 @@ async function saveGuild(env, s, id, body) {
 }
 
 // ---------------------------------------------------------------- moderation (same rules as the bot's moderation.js)
-const PERM = { kick: [0x2n, 'Kick Members'], ban: [0x4n, 'Ban Members'], timeout: [1n << 40n, 'Timeout Members'] };
-const NEEDS = { ban: 'ban', unban: 'ban', kick: 'kick', timeout: 'timeout', untimeout: 'timeout', warn: null, unwarn: null };
+const PERM = { kick: [0x2n, 'Kick Members'], ban: [0x4n, 'Ban Members'], timeout: [1n << 40n, 'Timeout Members'], nick: [0x8000000n, 'Manage Nicknames'] };
+const NEEDS = { ban: 'ban', unban: 'ban', kick: 'kick', timeout: 'timeout', untimeout: 'timeout', warn: null, unwarn: null, nick: 'nick' };
+// channel tools, checked per channel like Discord does: msgs = Manage Messages there, edit = Manage Channels there
+const CHANNEL_ACTS = { purge: 'msgs', slowmode: 'edit', lock: 'edit', unlock: 'edit' };
+const MANAGE_MESSAGES = 0x2000n, MANAGE_CHANNELS = 0x10n;
 const has = (g, perm) => g.owner || (BigInt(g.permissions) & (ADMINISTRATOR | PERM[perm][0])) !== 0n;
-const memberOut = (m) => ({ id: m.user.id, name: m.nick || m.user.global_name || m.user.username, tag: m.user.username, avatar: m.user.avatar, timedOutUntil: m.communication_disabled_until || null });
+const memberOut = (m) => ({ id: m.user.id, name: m.nick || m.user.global_name || m.user.username, tag: m.user.username, avatar: m.user.avatar, bot: !!m.user.bot,
+  nick: m.nick || '', joined: m.joined_at ? Date.parse(m.joined_at) : null, roles: m.roles.length, timedOutUntil: m.communication_disabled_until || null });
 const dur = (min) => (min % 1440 === 0 ? `${min / 1440}d` : min % 60 === 0 ? `${min / 60}h` : `${min}m`);
 
 async function findMembers(env, s, id, q) {
@@ -345,13 +349,22 @@ async function findMembers(env, s, id, q) {
 }
 async function modOverview(env, s, id) {
   const g = await requireManage(env, s, id);
-  const [bans, [actions]] = await Promise.all([
+  const [bans, [actions, kv], access] = await Promise.all([
     has(g, 'ban') ? discord(`/guilds/${id}/bans?limit=100`, botAuth(env)).catch(() => []) : [],
-    sql(env, [['SELECT modId, targetId, action, reason, ts FROM mod_actions WHERE guildId=? ORDER BY ts DESC LIMIT 25', [id]]]),
+    sql(env, [['SELECT modId, targetId, action, reason, ts FROM mod_actions WHERE guildId=? ORDER BY ts DESC LIMIT 50', [id]],
+      ["SELECT key, value FROM kv_store WHERE key IN (?, 'web:names')", [`locks:${id}`]]]),
+    botAccess(env, s, id),
   ]);
+  const kvv = Object.fromEntries(kv.map((r) => { try { return [r.key, JSON.parse(r.value)]; } catch { return [r.key, null]; } }));
+  const locks = kvv[`locks:${id}`] || {};
+  // lock/purge/slowmode rows point at a channel, not a person
+  const ids = actions.flatMap((a) => (/^(Lock|Unlock|Purge|Slowmode)/.test(a.action) ? [a.modId] : [a.modId, a.targetId]));
+  const names = await users(env, ids, kvv['web:names'] || {});
   return {
     perms: Object.fromEntries(Object.keys(PERM).map((p) => [p, has(g, p)])),
-    bans: bans.map((b) => ({ id: b.user.id, tag: b.user.username, reason: b.reason })), actions,
+    bans: bans.map((b) => ({ id: b.user.id, tag: b.user.username, reason: b.reason })),
+    actions: actions.map((a) => ({ ...a, mod: names[a.modId]?.name, target: names[a.targetId]?.name })),
+    channels: [...access.values()].filter((c) => c.msgs || c.edit).map((c) => ({ ...c, locked: locks[c.id] ? { until: locks[c.id].until || 0 } : null })),
   };
 }
 async function memberWarnings(env, s, id, uid) {
@@ -400,6 +413,7 @@ async function record(env, id, modId, targetId, action, reason) {
 async function modAction(env, s, id, body) {
   const g = await requireManage(env, s, id);
   const action = String(body.action || '');
+  if (Object.hasOwn(CHANNEL_ACTS, action)) return channelAction(env, s, id, action, body);
   if (!Object.hasOwn(NEEDS, action)) throw fail(400, 'Unknown action');
   const need = NEEDS[action];
   if (need && !has(g, need)) throw fail(403, `You need ${PERM[need][1]} in this server.`);
@@ -446,7 +460,87 @@ async function modAction(env, s, id, body) {
     if (!w) throw fail(404, 'No matching warning found.');
     await one(env, 'DELETE FROM warnings WHERE id=?', [w.id]);
     await record(env, id, s.uid, uid, 'Unwarn', `Removed warning #${w.id}`);
+  } else if (action === 'nick') {
+    const nick = String(body.nick || '').trim().slice(0, 32);
+    await botDo(env, `/guilds/${id}/members/${uid}`, 'PATCH', { nick: nick || null }, audit);
+    await record(env, id, s.uid, uid, nick ? `Nickname: ${nick}` : 'Nickname reset', reason);
   }
+  return { ok: true };
+}
+
+// Locks use the bot's own format (kv locks:<guildId>, commands/modules/moderation.js), so !unlock undoes a website lock,
+// the dashboard undoes a !lock, and the bot's 30s sweep ends timed locks from either side.
+const LOCK_BITS = { SendMessages: 0x800n, SendMessagesInThreads: 1n << 38n, CreatePublicThreads: 1n << 35n, CreatePrivateThreads: 1n << 36n };
+const LOCK_MASK = Object.values(LOCK_BITS).reduce((a, b) => a | b, 0n);
+const STAFF_BITS = ADMINISTRATOR | MANAGE_MESSAGES | MANAGE_CHANNELS | (1n << 40n); // roles that keep talking, like the bot's staffRole()
+const setOverwrite = (env, ch, roleId, allow, deny, audit) => botDo(env, `/channels/${ch}/permissions/${roleId}`, 'PUT', { type: 0, allow: String(allow), deny: String(deny) }, audit);
+
+async function channelAction(env, s, id, action, body) {
+  const chId = String(body.channelId || '');
+  const c = (await botAccess(env, s, id)).get(chId);
+  const need = CHANNEL_ACTS[action];
+  if (!c || !c[need]) throw fail(403, need === 'msgs' ? 'You need Manage Messages in that channel.' : 'You need Manage Channels in that channel.');
+  const reason = String(body.reason || '').trim().slice(0, 400) || 'No reason given';
+  const audit = `${s.name} (dashboard): ${reason}`;
+  if (action === 'purge') {
+    const n = Math.round(Number(body.count));
+    if (!(n >= 1 && n <= 100)) throw fail(400, 'Pick 1 to 100 messages.');
+    const from = /^\d{17,20}$/.test(String(body.userId || '')) ? String(body.userId) : null;
+    const cutoff = Date.now() - 14 * 864e5 + 60e3; // Discord only bulk-deletes messages younger than 14 days
+    const list = await discord(`/channels/${chId}/messages?limit=100`, botAuth(env));
+    const ids = list.filter((m) => !m.pinned && (!from || m.author.id === from) && Date.parse(m.timestamp) > cutoff).slice(0, n).map((m) => m.id);
+    if (ids.length > 1) await botDo(env, `/channels/${chId}/messages/bulk-delete`, 'POST', { messages: ids }, audit);
+    else if (ids.length) await botDo(env, `/channels/${chId}/messages/${ids[0]}`, 'DELETE', undefined, audit);
+    await record(env, id, s.uid, chId, `Purge (${ids.length} messages in #${c.name}${from ? `, from ${from}` : ''})`, reason);
+    return { ok: true, deleted: ids.length };
+  }
+  if (action === 'slowmode') {
+    const sec = Math.round(Number(body.seconds));
+    if (!(sec >= 0 && sec <= 21600)) throw fail(400, 'Slowmode goes from off to 6 hours.');
+    await botDo(env, `/channels/${chId}`, 'PATCH', { rate_limit_per_user: sec }, audit);
+    c.slow = sec; // the cached channel list shows the new value straight away
+    await record(env, id, s.uid, chId, sec ? `Slowmode #${c.name} (${sec}s)` : `Slowmode off #${c.name}`, reason);
+    return { ok: true };
+  }
+  const key = `locks:${id}`;
+  const all = (await kvGet(env, key)) || {};
+  const ch = await discord(`/channels/${chId}`, botAuth(env));
+  const ows = new Map((ch.permission_overwrites || []).map((o) => [o.id, o]));
+  const bits = (rid) => [BigInt(ows.get(rid)?.allow || 0), BigInt(ows.get(rid)?.deny || 0)];
+  if (action === 'lock') {
+    if (all[chId]) throw fail(400, 'That channel is already locked.');
+    const min = Math.round(Number(body.minutes || 0));
+    if (!(min >= 0 && min <= 7 * 1440)) throw fail(400, 'The longest lock is 7 days.');
+    const roles = new Map((await discord(`/guilds/${id}`, botAuth(env))).roles.map((r) => [r.id, BigInt(r.permissions)]));
+    // @everyone plus every non-staff role that was allowed to talk here
+    const targets = [id, ...[...ows.values()].filter((o) => o.type === 0 && o.id !== id && (BigInt(o.allow) & LOCK_BITS.SendMessages) && roles.has(o.id) && !(roles.get(o.id) & STAFF_BITS)).map((o) => o.id)];
+    const saved = {};
+    try {
+      for (const rid of targets) {
+        const [allow, deny] = bits(rid);
+        saved[rid] = Object.fromEntries(Object.entries(LOCK_BITS).map(([k, b]) => [k, allow & b ? 'allow' : deny & b ? 'deny' : null]));
+        await setOverwrite(env, chId, rid, allow & ~LOCK_MASK, deny | LOCK_MASK, audit);
+      }
+    } finally { // whatever got locked is remembered, so unlock can always put it back
+      if (Object.keys(saved).length) { all[chId] = { saved, until: min ? Date.now() + min * 60e3 : 0, by: s.uid }; await kvPut(env, key, all); }
+    }
+    await record(env, id, s.uid, chId, `Lock #${c.name}${min ? ` (${dur(min)})` : ''}`, reason);
+    await botDo(env, `/channels/${chId}/messages`, 'POST', { allowed_mentions: { parse: [] }, embeds: [{ title: '🔒 This channel is locked', color: 0xE74C3C,
+      description: `${reason}${min ? `\nIt unlocks <t:${Math.floor((Date.now() + min * 60e3) / 1000)}:R>.` : ''}` }] }, '').catch(() => {});
+    return { ok: true };
+  }
+  // unlock
+  const e = all[chId];
+  if (!e) throw fail(400, 'That channel wasn\'t locked with OpenBricks.');
+  for (const [rid, st] of Object.entries(e.saved || {})) {
+    let [allow, deny] = bits(rid);
+    for (const [k, b] of Object.entries(LOCK_BITS)) { allow &= ~b; deny &= ~b; if (st[k] === 'allow') allow |= b; else if (st[k] === 'deny') deny |= b; }
+    await setOverwrite(env, chId, rid, allow, deny, audit).catch((err) => { if (err.status !== 404) throw err; }); // 404 = role deleted meanwhile
+  }
+  delete all[chId];
+  await kvPut(env, key, Object.keys(all).length ? all : null);
+  await record(env, id, s.uid, chId, `Unlock #${c.name}`, reason);
+  await botDo(env, `/channels/${chId}/messages`, 'POST', { allowed_mentions: { parse: [] }, embeds: [{ title: '🔓 This channel is unlocked', description: 'You can talk again.', color: 0x2ECC71 }] }, '').catch(() => {});
   return { ok: true };
 }
 
@@ -482,7 +576,8 @@ function botAccess(env, s, id) {
     const out = new Map();
     for (const c of chans) {
       const p = perms(c);
-      if (allowed(p, VIEW)) out.set(c.id, { id: c.id, name: c.name, read: allowed(p, VIEW | HISTORY), send: allowed(p, VIEW | SEND) });
+      if (allowed(p, VIEW)) out.set(c.id, { id: c.id, name: c.name, read: allowed(p, VIEW | HISTORY), send: allowed(p, VIEW | SEND),
+        msgs: allowed(p, VIEW | MANAGE_MESSAGES), edit: allowed(p, VIEW | MANAGE_CHANNELS), slow: c.rate_limit_per_user || 0 });
     }
     return out;
   });

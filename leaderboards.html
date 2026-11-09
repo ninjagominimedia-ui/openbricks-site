@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0d1017">
 <title>Leaderboards — OpenBricks</title>
 <meta name="description" content="Every OpenBricks ranking: pack collectors, card completion, catchers, battles, mini-games, the Ninjago Master Exam, the richest players and the strongest clans.">
-<link rel="stylesheet" href="assets/style.css?v=20261109a">
+<link rel="stylesheet" href="assets/style.css?v=20261109b">
 </head>
 <body>
 <div class="wrap" style="padding:40px 24px 80px">
@@ -17,8 +17,8 @@
   <div class="tabs" id="tabs"></div>
   <div id="board"><div class="spinner"></div></div>
 </div>
-<script src="assets/config.js?v=20261109a"></script>
-<script src="assets/common.js?v=20261109a"></script>
+<script src="assets/config.js?v=20261109b"></script>
+<script src="assets/common.js?v=20261109b"></script>
 <script>
   renderNav('lb'); renderFooter();
   const winRate = (r) => Math.round((r.wins / Math.max(1, r.wins + r.losses)) * 100);
@@ -59,11 +59,11 @@
   const plain = (r, b) => (b.label ? b.label(r) : r.user?.name) || 'Unknown';
   const name = (r, b) => esc(plain(r, b)) + (b.title ? b.title(r) : '') + (isMe(r, b) ? ' <span class="you">you</span>' : '');
   const podium = (rows, b) => {
-    const slot = (r, i) => !r ? '<div></div>' : `<div class="p ${i === 0 ? 'first' : ''} ${isMe(r, b) ? 'mine' : ''}" style="--c:${['#ffd700', '#c0c0c0', '#cd7f32'][i]}">
-      <div class="rank">#${i + 1}</div>
-      <img src="${avatarUrl(r.userId, r.user?.avatar, 128)}" alt=""><div class="name" title="${esc(plain(r, b))}">${name(r, b)}</div>
-      <div class="val">${fmt(b.main(r))}</div><div class="sub">${b.unit} · ${b.sub(r)}</div></div>`;
-    return `<div class="podium">${slot(rows[1], 1)}${slot(rows[0], 0)}${slot(rows[2], 2)}</div>`;
+    const slot = (r, i) => !r ? '' : `<div class="p ${isMe(r, b) ? 'mine' : ''}" style="--c:${['#e2a53b', '#b9b2a6', '#b8743d'][i]}">
+      <div class="rank">${i + 1}</div><img src="${avatarUrl(r.userId, r.user?.avatar, 128)}" alt="">
+      <div class="name" title="${esc(plain(r, b))}">${name(r, b)}</div>
+      <div class="val">${fmt(b.main(r))}<small>${b.unit}</small></div><div class="sub">${b.sub(r)}</div></div>`;
+    return `<div class="podium">${rows.slice(0, 3).map(slot).join('')}</div>`;
   };
   const draw = () => {
     const b = BOARDS[tab];
@@ -80,7 +80,7 @@
     $('#board').innerHTML = `${pre}${podium(rows, b)}
       ${me && !b.notYou ? `<p class="page-sub" style="margin:0 0 14px">${mine >= 0 ? `You're <b>#${mine + 1}</b>${mine > 0 ? ` · ${fmt(b.main(rows[mine - 1]) - b.main(rows[mine]))} behind #${mine}` : ' (top spot)'}` : `You're not in the top ${rows.length} yet.`}</p>` : ''}
       ${rest.length ? `<table class="lb"><thead><tr><th>#</th><th>${b.label ? 'Clan' : 'Player'}</th><th>${b.unit}</th>${b.cols.map(([h]) => `<th class="hide-sm">${h}</th>`).join('')}</tr></thead><tbody>
-      ${rest.map((r, i) => `<tr class="${isMe(r, b) ? 'me' : ''}"><td class="pos">#${i + 4}</td>
+      ${rest.map((r, i) => `<tr class="${isMe(r, b) ? 'mine' : ''}"><td class="pos">#${i + 4}</td>
         <td><div class="who"><img src="${avatarUrl(r.userId, r.user?.avatar)}" alt="">${name(r, b)}</div></td>
         <td><b>${fmt(b.main(r))}</b><div class="bar"><i style="width:${Math.max(2, (b.main(r) / top) * 100)}%"></i></div></td>
         ${b.cols.map(([, f]) => `<td class="hide-sm">${f(r)}</td>`).join('')}</tr>`).join('')}
