@@ -39,6 +39,7 @@ const SLEEVE_NAMES = { ninja: 'Ninja Black', dragon: 'Dragon Scale', ice: 'Frost
 const VERSION = { holo: ['Holo', 'Holo Foil', 250], fullart: ['Full Art', 'Full Art', 150], gold: ['Gold', 'Gold', 100], shadow: ['Shadow', 'Shadow', 50], ghost: ['Ghost', 'Ghost', 25] }; // [badge, name, print run]
 
 let isAdmin = null;
+let pageTimer = null; // live refresh of the open page (Be the bot feed); route() stops it
 window.addEventListener('hashchange', route);
 route();
 
@@ -49,6 +50,7 @@ async function route() {
   const [, page, id] = location.hash.split('/');
   app.innerHTML = '<div class="spinner"></div>';
   $('#savebar').classList.remove('show');
+  clearInterval(pageTimer);
   window.onbeforeunload = null; app.oninput = app.onchange = app.onclick = app.onsubmit = null; // handlers of the previous page
   try {
     if (page === 'server' && id) return await serverPage(id);
@@ -88,20 +90,20 @@ async function serversPage() {
     const icon = guildIcon(g.id, g.icon);
     return `<div class="server"><div class="bannerwrap"><div class="banner" style="background-image:url('${icon}');${icon ? '' : 'background:var(--card2)'}"></div></div>
       <div class="icon">${icon ? `<img src="${icon}" alt="">` : esc(g.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 3))}</div>
-      <h4 title="${esc(g.name)}">${esc(g.name)}</h4>${g.viaOwner ? '<span class="chip" title="You can manage this server because you are a bot owner">bot owner</span>' : ''}
+      <h4 title="${esc(g.name)}">${esc(g.name)}</h4>${g.joined && Date.now() - g.joined < 7 * 864e5 ? `<span class="chip new" title="OpenBricks joined on ${new Date(g.joined).toLocaleString()}">New · ${ago(g.joined)} ago</span>` : ''}${g.viaOwner ? '<span class="chip" title="You can manage this server because you are a bot owner">bot owner</span>' : ''}
       ${g.botIn ? `<a class="btn primary small" href="#/server/${g.id}">Manage</a>`
         : `<a class="btn ghost small" target="_blank" rel="noopener" href="${me.inviteUrl}&guild_id=${g.id}&disable_guild_select=true">Add OpenBricks</a>`}</div>`;
   };
-  shell('servers', 'Select a server', me.admin ? 'Your servers, plus <b>every server OpenBricks is in</b> (marked <span class="chip">bot owner</span>).' : 'Servers where you have <b>Manage Server</b>.',
+  shell('servers', 'Select a server', me.admin ? 'Your servers, plus <b>every server OpenBricks is in</b> (marked <span class="chip">bot owner</span>). Servers it joined this week are first, marked <span class="chip new">New</span>.' : 'Servers where you have <b>Manage Server</b>.',
     me.guilds.length ? `<div class="servers">${me.guilds.map(card).join('')}</div>` : '<div class="empty">You don\'t manage any servers. Ask a server owner for Manage Server permission.</div>');
 }
 
 // ---------------------------------------------------------------- server settings
 async function serverPage(id) {
-  const [data, mod] = await Promise.all([api(`/api/guilds/${id}`), api(`/api/guilds/${id}/mod`).catch(() => null)]);
+  const [data, mod, botChans] = await Promise.all([api(`/api/guilds/${id}`), api(`/api/guilds/${id}/mod`).catch(() => null), api(`/api/guilds/${id}/bot`).catch((e) => e)]);
   let saved = { ...data.settings };
   const icon = guildIcon(id, data.guild.icon);
-  const side = `<div class="label">${esc(data.guild.name)}</div>${MODULES.map((m) => `<a href="#/server/${id}" data-jump="${m.id}">${m.name}</a>`).join('')}${mod ? `<a href="#/server/${id}" data-jump="mod">Moderation</a>` : ''}`;
+  const side = `<div class="label">${esc(data.guild.name)}</div>${MODULES.map((m) => `<a href="#/server/${id}" data-jump="${m.id}">${m.name}</a>`).join('')}${mod ? `<a href="#/server/${id}" data-jump="mod">Moderation</a>` : ''}<a href="#/server/${id}" data-jump="bot">Be the bot</a>`;
   const chanOpts = (v) => `<option value="">Disabled</option>${data.channels.map((c) => `<option value="${c.id}" ${c.id === v ? 'selected' : ''}># ${esc(c.name)}</option>`).join('')}`;
   const field = (f) => {
     const v = saved[f.key];
@@ -112,9 +114,10 @@ async function serverPage(id) {
     return `<div class="field" ${f.type === 'text' ? 'style="grid-column:1/-1"' : ''}><label>${f.label}</label>${input}${f.help && f.type !== 'toggle' ? `<small>${f.help}</small>` : ''}</div>`;
   };
   shell('servers', `${icon ? `<img src="${icon}" style="width:44px;height:44px;border-radius:12px;display:inline-block;vertical-align:middle;margin-right:12px">` : ''}${esc(data.guild.name)}`,
-    'Changes apply right away after you save.', MODULES.map((m) => `<section class="panel" id="m-${m.id}"><h3>${m.name}</h3><p class="desc">${m.desc}</p><div class="fields">${m.fields.map(field).join('')}</div></section>`).join('') + (mod ? modPanel(mod) : ''), side);
+    'Changes apply right away after you save.', MODULES.map((m) => `<section class="panel" id="m-${m.id}"><h3>${m.name}</h3><p class="desc">${m.desc}</p><div class="fields">${m.fields.map(field).join('')}</div></section>`).join('') + (mod ? modPanel(mod) : '') + botPanel(botChans), side);
   document.querySelectorAll('[data-jump]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); $(`#m-${a.dataset.jump}`).scrollIntoView(); }));
   if (mod) modWire(id, mod);
+  if (Array.isArray(botChans)) botWire(id, botChans);
 
   const read = (el) => (el.type === 'checkbox' ? el.checked : el.type === 'number' ? (el.value === '' ? null : Number(el.value)) : el.value || null);
   const changes = () => {
@@ -213,6 +216,64 @@ function modWire(id, mod) {
       if (act === 'warn' || act === 'unwarn') showWarnings(id, uid, name);
     } catch (err) { toast(err.message, 'bad'); btn.disabled = false; }
   };
+}
+
+// ---------------------------------------------------------------- be the bot (web version of the OpenBricks Client's Messages tab)
+function botPanel(chans) {
+  const head = '<section class="panel" id="m-bot"><h3>Be the bot</h3>';
+  if (!Array.isArray(chans)) return `${head}<div class="empty">${esc(chans?.message || 'Not available right now.')}</div></section>`;
+  return `${head}<p class="desc">Read a channel and talk as OpenBricks. You only get channels you can see on Discord. Messages you send are logged with your name.</p>
+    <div class="fields"><div class="field"><label>Channel</label><select id="botch"><option value="">Pick a channel</option>${chans.map((c) => `<option value="${c.id}">#${esc(c.name)}${c.send ? '' : ' (read only)'}</option>`).join('')}</select></div></div>
+    <div id="botfeed" class="botfeed"><div class="empty">Pick a channel to see its messages.</div></div>
+    <form id="botsend" class="botsend"><input id="botmsg" maxlength="2000" placeholder="Message as OpenBricks..." autocomplete="off" disabled><button class="btn primary small" type="submit" disabled>Send</button></form></section>`;
+}
+function botWire(id, chans) {
+  const feed = $('#botfeed'), input = $('#botmsg'), btn = $('#botsend button');
+  let ch = '', msgs = [], busy = false;
+  const time = (ts) => new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const line = (m) => `<div class="bmsg"><img src="${avatarUrl(m.authorId, m.avatar, 32)}" alt=""><div><b class="${m.bot ? 'isbot' : ''}">${esc(m.author)}</b> <span class="t">${time(m.ts)}</span>
+    <div class="txt">${esc(m.text)}${m.files.filter((f) => /^https:\/\//.test(f.url)).map((f) => ` <a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.name)}</a>`).join('')}${m.embeds.map((e) => ` <span class="chip">${esc(e)}</span>`).join('')}</div></div></div>`;
+  const draw = (stick) => {
+    feed.innerHTML = msgs.length ? msgs.map(line).join('') : '<div class="empty">No messages here yet.</div>';
+    if (stick) feed.scrollTop = feed.scrollHeight;
+  };
+  const add = (list) => { const seen = new Set(msgs.map((m) => m.id)); msgs = [...msgs, ...list.filter((m) => !seen.has(m.id))].slice(-200); };
+  // first call loads the last 50, then only newer ones
+  const load = async () => {
+    if (!ch || busy || document.hidden) return;
+    busy = true;
+    const want = ch, first = !msgs.length;
+    try {
+      const got = await api(`/api/guilds/${id}/bot/${ch}${first ? '' : `?after=${msgs.at(-1).id}`}`);
+      if (want === ch && (first || got.length)) {
+        const stick = first || feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 30;
+        add(got); draw(stick);
+      }
+    } catch (e) { if (first && want === ch) feed.innerHTML = `<div class="empty">${esc(e.message)}</div>`; } // a failed refresh just tries again
+    busy = false;
+    if (want !== ch) load(); // channel changed while this was loading
+  };
+  $('#botch').onchange = (e) => {
+    ch = e.target.value; msgs = [];
+    const c = chans.find((x) => x.id === ch);
+    input.disabled = btn.disabled = !c?.send;
+    input.placeholder = c && !c.send ? 'You can\'t send messages in this channel on Discord' : 'Message as OpenBricks...';
+    feed.innerHTML = ch ? '<div class="spinner"></div>' : '<div class="empty">Pick a channel to see its messages.</div>';
+    load();
+  };
+  $('#botsend').onsubmit = async (e) => {
+    e.preventDefault();
+    const content = input.value.trim();
+    if (!content || !ch) return;
+    btn.disabled = true;
+    try {
+      const m = await api(`/api/guilds/${id}/bot/${ch}`, { method: 'POST', body: JSON.stringify({ content }) });
+      input.value = '';
+      add([m]); draw(true);
+    } catch (err) { toast(err.message, 'bad'); }
+    btn.disabled = false; input.focus();
+  };
+  pageTimer = setInterval(load, 5000);
 }
 
 // ---------------------------------------------------------------- admin panel (bot owners; the Worker and the bot re-check every job)
@@ -403,7 +464,7 @@ async function collectionPage() {
   const img = (c, finish) => `cards/${c.id}${finish && c.versions.includes(finish) ? '-' + finish : ''}.webp`;
   const tile = (c) => {
     const owned = byCard.get(c.id);
-    if (!owned) return `<div class="tcard locked"><img src="${img(c)}" alt="" loading="lazy"></div>`;
+    if (!owned) return `<div class="tcard locked" data-card="${c.id}" title="Not owned yet: click to preview"><img src="${img(c)}" alt="" loading="lazy"></div>`;
     const best = ['ghost', 'shadow', 'gold', 'fullart', 'holo', null].find((f) => owned.some((r) => r.finish === f));
     return `<div class="tcard r-${String(c.rarity).toLowerCase()}" data-card="${c.id}"><img src="${img(c, best)}" alt="${esc(c.name)}" loading="lazy">
       <div class="badges">${owned.filter((r) => r.finish).map((r) => `<span class="v-${r.finish}">${VERSION[r.finish]?.[0] || ''}</span>`).join('')}</div>
@@ -415,7 +476,7 @@ async function collectionPage() {
       <div class="setbar"><i style="width:${(got / list.length) * 100}%"></i></div><div class="cards">${list.map(tile).join('')}</div></section>`;
   }).join('');
   const deck = mine.deck.map((d) => cards.find((c) => c.id === d.cardId)).filter(Boolean);
-  shell('collection', 'My collection', 'Your pack cards. Click one for its versions and serial numbers.',
+  shell('collection', 'My collection', 'Your pack cards. Click one for its versions and serial numbers, or a locked one for a preview.',
     `<div class="kpis">
       <div class="kpi"><b>${byCard.size}/${cards.length}</b><span>Unique cards</span></div>
       <div class="kpi"><b>${fmt(total)}</b><span>Total copies</span></div>
@@ -431,11 +492,19 @@ async function collectionPage() {
     const c = cards.find((x) => x.id === t.dataset.card), owned = byCard.get(c.id);
     const m = document.createElement('div');
     m.className = 'modal';
-    m.innerHTML = `<div class="box"><img src="${img(c, owned.find((r) => r.finish)?.finish)}" alt="">
-      <div><h2 style="margin:0">${esc(c.name)}</h2><p style="color:var(--mute);margin:4px 0 16px">${esc(c.title)}<br>${esc(c.rarity)} · ${esc(c.set)} · Card ${c.number} of ${c.total}</p>
+    const head = `<h2 style="margin:0">${esc(c.name)}</h2><p style="color:var(--mute);margin:4px 0 16px">${esc(c.title)}<br>${esc(c.rarity)} · ${esc(c.set)} · Card ${c.number} of ${c.total}</p>`;
+    m.innerHTML = owned
+      ? `<div class="box"><img src="${img(c, owned.find((r) => r.finish)?.finish)}" alt="">
+      <div>${head}
       ${owned.map((r) => `<div class="toggle-row"><div><b>${r.finish ? VERSION[r.finish][1] : 'Original'}</b><span class="m">×${r.n}</span></div>
         <span class="chip">best #${r.serial ?? '?'}${r.finish ? ` / ${VERSION[r.finish][2]}` : ''}</span></div>`).join('')}
-      <p style="margin-top:16px"><code>!flex ${esc(c.name.toLowerCase())}</code></p></div></div>`;
+      <p style="margin-top:16px"><code>!flex ${esc(c.name.toLowerCase())}</code></p></div></div>`
+      // not owned yet: a preview of the card and the versions it comes in
+      : `<div class="box"><img src="${img(c)}" alt="${esc(c.name)}">
+      <div>${head}<p class="verdict warn"><b>Not in your collection yet</b></p>
+      <div class="toggle-row"><div><b>Original</b><span class="m">no print limit</span></div></div>
+      ${c.versions.filter((f) => VERSION[f]).map((f) => `<div class="toggle-row"><div><b>${VERSION[f][1]}</b><span class="m">only ${VERSION[f][2]} ever printed</span></div></div>`).join('')}
+      <p style="margin-top:16px">Open packs in Discord with <code>!buypack</code> to find it.</p></div></div>`;
     m.onclick = (ev) => { if (ev.target === m) m.remove(); };
     document.body.append(m);
   };

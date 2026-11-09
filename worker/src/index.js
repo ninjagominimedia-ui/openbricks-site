@@ -11,6 +11,9 @@
 //   GET  /api/guilds/:id/mod        -> your mod permissions, bans, recent mod actions
 //   POST /api/guilds/:id/mod        -> ban / unban / kick / timeout / untimeout / warn / unwarn
 //   GET  /api/guilds/:id/warnings/:userId
+//   GET  /api/guilds/:id/bot        -> "Be the bot": channels you can see there
+//   GET  /api/guilds/:id/bot/:ch    -> last 50 messages of a channel (?after=<messageId> for newer ones)
+//   POST /api/guilds/:id/bot/:ch    -> send a message as the bot
 //   POST /api/admin/jobs            -> bot owners only: queue an /admin action for the bot (commands/modules/webadmin.js)
 //   GET  /api/admin/jobs/:id        -> status + result of your job
 //   GET  /api/admin/log             -> last 40 website admin actions
@@ -20,9 +23,11 @@
 //   GET  /api/collection            -> your pack cards, deck, battle rank, sleeves
 //   GET  /api/leaderboards          -> public top lists
 //   GET  /api/stats                 -> public counters for the home page
+//   POST /votes/topgg, /votes/dbl   -> vote webhooks of top.gg / discordbotlist.com (the bot pays them: growth.js)
 //
 // Secrets (wrangler secret put ...): DISCORD_CLIENT_SECRET, BOT_TOKEN, TURSO_URL, TURSO_TOKEN, SESSION_SECRET,
-//   RESEND_KEY (resend.com API key of the account registered with PURGE_EMAIL; sends the purge email)
+//   RESEND_KEY (resend.com API key of the account registered with PURGE_EMAIL; sends the purge email),
+//   TOPGG_WEBHOOK_SECRET, DBL_WEBHOOK_SECRET (the same text typed into each site's webhook "Authorization" box)
 // Vars (wrangler.toml): DISCORD_CLIENT_ID, SITE_URL
 
 const DISCORD = 'https://discord.com/api/v10';
@@ -39,6 +44,8 @@ export default {
       if (url.pathname === '/purge/confirm') return await purgeConfirm(env, req, url);
       if (url.pathname === '/api/stats') return json(env, await cached('stats', 300e3, () => publicStats(env)), 300);
       if (url.pathname === '/api/leaderboards') return json(env, await cached('lb', 120e3, () => leaderboards(env)), 120);
+      const vote = url.pathname.match(/^\/votes\/(topgg|dbl)$/);
+      if (vote && req.method === 'POST') return await voteHook(env, req, vote[1]);
       const session = await readSession(env, req);
       if (!session) return json(env, { error: 'Not logged in' }, 0, 401);
       if (url.pathname === '/api/me') return json(env, await me(env, session));
@@ -59,6 +66,10 @@ export default {
       if (m && m[2] === 'mod' && req.method === 'GET') return json(env, await modOverview(env, session, m[1]));
       if (m && m[2] === 'mod' && req.method === 'POST') return json(env, await modAction(env, session, m[1], await req.json()));
       if (m && m[3]) return json(env, await memberWarnings(env, session, m[1], m[3]));
+      const b = url.pathname.match(/^\/api\/guilds\/(\d{17,20})\/bot(?:\/(\d{17,20}))?$/);
+      if (b && !b[2]) return json(env, await botChannels(env, session, b[1]));
+      if (b && req.method === 'GET') return json(env, await botMessages(env, session, b[1], b[2], url.searchParams.get('after')));
+      if (b && req.method === 'POST') { rateLimit(`${session.uid}:send`, 10); return json(env, await botSend(env, session, b[1], b[2], await req.json())); }
       return json(env, { error: 'Not found' }, 0, 404);
     } catch (e) {
       return json(env, { error: e.message || String(e) }, 0, e.status || 500);
@@ -74,6 +85,7 @@ function cached(key, ttl, make) {
   const hit = memo.get(key);
   if (hit && Date.now() - hit.at < ttl) return hit.promise;
   const promise = make().catch((e) => { memo.delete(key); throw e; });
+  if (memo.size > 2000) memo.clear(); // per-person keys (Be the bot) would otherwise pile up
   memo.set(key, { at: Date.now(), promise });
   return promise;
 }
@@ -155,6 +167,33 @@ async function sql(env, stmts, loose = false) {
 }
 const one = async (env, q, a) => (await sql(env, [[q, a]]))[0];
 
+// ---------------------------------------------------------------- bot list votes (the bot pays them: commands/modules/growth.js)
+// Both sites send the secret typed into their webhook settings as the Authorization header.
+const VOTE_SITES = { topgg: ['top.gg', 'TOPGG_WEBHOOK_SECRET'], dbl: ['discordbotlist.com', 'DBL_WEBHOOK_SECRET'] };
+function sameText(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0; for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i); // constant time
+  return !diff;
+}
+async function voteHook(env, req, key) {
+  const [site, secretName] = VOTE_SITES[key];
+  const secret = env[secretName];
+  if (!secret || !sameText(req.headers.get('Authorization') || '', secret)) return new Response('Unauthorized', { status: 401 });
+  const body = await req.json().catch(() => ({}));
+  // top.gg sends { user, isWeekend, type: 'upvote' | 'test' }, discordbotlist.com sends { id }. Test votes pay too, so the
+  // owner can try the whole path once (the 11h duplicate check below stops repeats).
+  const uid = String((key === 'topgg' ? body.user : body.id) || '');
+  if (!/^\d{17,20}$/.test(uid)) return new Response('Bad user id', { status: 400 });
+  const now = Date.now();
+  await sql(env, [
+    ["CREATE TABLE IF NOT EXISTS bot_votes (id INTEGER PRIMARY KEY AUTOINCREMENT, userId TEXT, site TEXT, weekend INTEGER DEFAULT 0, at INTEGER, status TEXT DEFAULT 'pending')"],
+    // a site resends the same vote when we answer slowly: anything within 11h of the last vote is that retry, so drop it
+    ["INSERT INTO bot_votes (userId, site, weekend, at, status) SELECT ?,?,?,?,'pending' WHERE NOT EXISTS (SELECT 1 FROM bot_votes WHERE userId=? AND site=? AND at>?)",
+      [uid, site, body.isWeekend ? 1 : 0, now, uid, site, now - 11 * 36e5]],
+  ]);
+  return new Response('ok');
+}
+
 // ---------------------------------------------------------------- login
 function login(env, url) {
   const state = crypto.randomUUID();
@@ -209,15 +248,24 @@ function userGuilds(s) {
   userGuildCache.set(s.at, { at: Date.now(), promise });
   return promise;
 }
+const NEW_SERVER_MS = 7 * 864e5; // bot owners see a "New" tag on servers the bot joined in the last week
 const canManage = (g) => g.owner || (BigInt(g.permissions) & (MANAGE_GUILD | ADMINISTRATOR)) !== 0n;
 async function me(env, s) {
   const [guilds, botIds, owner] = await Promise.all([userGuilds(s), botGuildIds(env), isBotOwner(env, s.uid)]);
   const list = guilds.filter(canManage).map((g) => ({ id: g.id, name: g.name, icon: g.icon, botIn: botIds.has(g.id) }));
   // bot owners manage every server the bot is in, not only their own
-  if (owner) { const mine = new Set(list.map((g) => g.id)); for (const g of botIds.values()) if (!mine.has(g.id)) list.push({ ...g, botIn: true, viaOwner: true }); }
+  if (owner) {
+    const mine = new Set(list.map((g) => g.id));
+    for (const g of botIds.values()) if (!mine.has(g.id)) list.push({ ...g, botIn: true, viaOwner: true });
+    // when the bot joined each server: the bot publishes it in its status snapshot (commands/modules/remote.js)
+    const snap = await kvGet(env, 'remote_snapshot').catch(() => null);
+    const joined = new Map((snap?.guilds || []).map((g) => [g.id, g.joined]));
+    for (const g of list) if (joined.get(g.id)) g.joined = joined.get(g.id);
+  }
+  const isNew = (g) => (g.joined && Date.now() - g.joined < NEW_SERVER_MS ? 1 : 0);
   return {
     user: { id: s.uid, name: s.name, avatar: s.avatar }, admin: owner,
-    guilds: list.sort((a, b) => (b.botIn - a.botIn) || (a.viaOwner || 0) - (b.viaOwner || 0) || a.name.localeCompare(b.name)),
+    guilds: list.sort((a, b) => (b.botIn - a.botIn) || (isNew(b) - isNew(a)) || (a.viaOwner || 0) - (b.viaOwner || 0) || a.name.localeCompare(b.name)),
     inviteUrl: `https://discord.com/oauth2/authorize?client_id=${env.DISCORD_CLIENT_ID}&permissions=1512634182855&scope=bot%20applications.commands`,
   };
 }
@@ -400,6 +448,82 @@ async function modAction(env, s, id, body) {
     await record(env, id, s.uid, uid, 'Unwarn', `Removed warning #${w.id}`);
   }
   return { ok: true };
+}
+
+// ---------------------------------------------------------------- "Be the bot": read a channel and talk as OpenBricks
+// The web version of the old OpenBricks Client's Messages tab, limited to one server you manage. It uses the bot's token
+// straight from here, so it works live without the bot process. You only get channels Discord lets YOU see (and send in):
+// Manage Server must not open staff channels you're not allowed into.
+const VIEW = 0x400n, SEND = 0x800n, HISTORY = 0x10000n;
+const allowed = (p, need) => (p & need) === need;
+function channelPerms(guildId, roles, member, c) {
+  let base = roles.get(guildId) || 0n; // @everyone role has the server's id
+  for (const r of member.roles) base |= roles.get(r) || 0n;
+  if (base & ADMINISTRATOR) return -1n; // every bit
+  const ow = new Map((c.permission_overwrites || []).map((o) => [o.id, o]));
+  const apply = (p, o) => (o ? (p & ~BigInt(o.deny)) | BigInt(o.allow) : p);
+  let p = apply(base, ow.get(guildId));
+  let allow = 0n, deny = 0n;
+  for (const r of member.roles) { const o = ow.get(r); if (o) { allow |= BigInt(o.allow); deny |= BigInt(o.deny); } }
+  p = (p & ~deny) | allow;
+  return apply(p, ow.get(member.user.id));
+}
+// -> Map channelId -> { id, name, read, send } of text channels the person may see. Cached 30s per person + server.
+function botAccess(env, s, id) {
+  return cached(`acc:${s.uid}:${id}`, 30e3, async () => {
+    const g = await requireManage(env, s, id);
+    const chans = (await discord(`/guilds/${id}/channels`, botAuth(env))).filter((c) => c.type === 0 || c.type === 5).sort((a, b) => a.position - b.position);
+    let perms = () => -1n; // server owners and bot owners see everything
+    if (!g.owner) {
+      const [guild, member] = await Promise.all([discord(`/guilds/${id}`, botAuth(env)), discord(`/guilds/${id}/members/${s.uid}`, botAuth(env))]);
+      const roles = new Map(guild.roles.map((r) => [r.id, BigInt(r.permissions)]));
+      perms = (c) => channelPerms(id, roles, member, c);
+    }
+    const out = new Map();
+    for (const c of chans) {
+      const p = perms(c);
+      if (allowed(p, VIEW)) out.set(c.id, { id: c.id, name: c.name, read: allowed(p, VIEW | HISTORY), send: allowed(p, VIEW | SEND) });
+    }
+    return out;
+  });
+}
+async function botChannel(env, s, id, ch, what) {
+  const c = (await botAccess(env, s, id)).get(ch);
+  if (!c || !c[what]) throw fail(403, what === 'send' ? 'You can\'t send messages in that channel on Discord.' : 'You can\'t read that channel on Discord.');
+  return c;
+}
+async function botChannels(env, s, id) {
+  return [...(await botAccess(env, s, id)).values()];
+}
+const msgOut = (m) => {
+  let text = m.content || '';
+  for (const u of m.mentions || []) text = text.replace(new RegExp(`<@!?${u.id}>`, 'g'), `@${u.global_name || u.username}`);
+  return {
+    id: m.id, ts: Date.parse(m.timestamp), author: m.author.global_name || m.author.username, authorId: m.author.id, avatar: m.author.avatar, bot: !!m.author.bot,
+    text, files: (m.attachments || []).map((a) => ({ name: a.filename, url: a.url })), embeds: (m.embeds || []).map((e) => e.title || e.author?.name || e.description?.slice(0, 80) || 'embed'),
+  };
+};
+async function botMessages(env, s, id, ch, after) {
+  await botChannel(env, s, id, ch, 'read');
+  const q = /^\d{17,20}$/.test(after || '') ? `&after=${after}` : '';
+  const list = await discord(`/channels/${ch}/messages?limit=50${q}`, botAuth(env)).catch((e) => {
+    throw e.status === 502 && / 403 /.test(e.message) ? fail(403, 'OpenBricks can\'t read that channel. Give its role View Channel + Read Message History there.') : e;
+  });
+  return list.map(msgOut).sort((a, b) => a.ts - b.ts || (BigInt(a.id) < BigInt(b.id) ? -1 : 1));
+}
+async function botSend(env, s, id, ch, body) {
+  const content = String(body.content || '').trim();
+  if (!content) throw fail(400, 'Write something first.');
+  if (content.length > 2000) throw fail(400, 'Discord messages can be 2000 characters at most.');
+  const c = await botChannel(env, s, id, ch, 'send');
+  const m = await discord(`/channels/${ch}/messages`, botAuth(env), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, allowed_mentions: { parse: ['users'] } }), // never @everyone or role pings
+  }).catch((e) => { throw e.status === 502 && / 403 /.test(e.message) ? fail(403, 'OpenBricks can\'t talk in that channel. Give its role Send Messages there.') : e; });
+  // who said what as the bot: shows up in the OpenBricks Client's Activity search
+  await sql(env, [['INSERT INTO activity_log (ts, type, userId, name, guildId, channelId, text) VALUES (?,?,?,?,?,?,?)',
+    [Date.now(), 'webbot', s.uid, s.name, id, ch, `as bot in #${c.name}: ${content}`.slice(0, 300)]]], true).catch(() => {});
+  return msgOut(m);
 }
 
 // ---------------------------------------------------------------- admin panel (bot owners only)
