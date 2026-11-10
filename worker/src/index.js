@@ -776,9 +776,9 @@ async function collection(env, s) {
 // Names survive Worker restarts in kv web:names, so a refresh only asks Discord about people it hasn't looked up for a day.
 // A free Worker may make 50 subrequests per request: at most NAME_LOOKUPS go to Discord, the rest fill in on later refreshes.
 const NAME_LOOKUPS = 30, NAME_TTL = 864e5;
-async function users(env, ids, stored) {
+async function users(env, ids, stored, ttl = NAME_TTL) {
   const now = Date.now(), out = {}, todo = [];
-  for (const id of new Set(ids)) { const c = stored[id]; if (c && now - c.at < NAME_TTL) out[id] = c; else todo.push(id); }
+  for (const id of new Set(ids)) { const c = stored[id]; if (c && now - c.at < ttl) out[id] = c; else todo.push(id); }
   let changed = false;
   await Promise.all(todo.slice(0, NAME_LOOKUPS).map(async (id) => {
     try { const u = await discord(`/users/${id}`, botAuth(env)); out[id] = stored[id] = { name: u.global_name || u.username, avatar: u.avatar, at: now }; changed = true; }
@@ -861,7 +861,7 @@ async function profile(env, uid) {
   const kvv = Object.fromEntries(kv.map((r) => [r.key.split(':')[0] === 'web' ? r.key : r.key.split(':')[0], parse(r.value)]));
   if (kvv[`web:hidden:${uid}`]) throw fail(404, 'This profile is private.');
   if (!cards.length && !rank.length) throw fail(404, 'No OpenBricks player with that id.');
-  const who = (await users(env, [uid], kvv['web:names'] || {}))[uid];
+  const who = (await users(env, [uid], kvv['web:names'] || {}, 600e3))[uid];
   return { user: { id: uid, name: (typeof kvv.nick === 'string' && kvv.nick) || who?.name || 'Unknown player', avatar: who?.avatar ?? null },
     cards, deck: Array.isArray(kvv.deck) ? kvv.deck : [], sleeve: typeof kvv.sleeve === 'string' ? kvv.sleeve : null, rank: rank[0] || null, season, setsDone: sets[0]?.n || 0 };
 }

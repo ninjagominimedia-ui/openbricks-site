@@ -12,7 +12,7 @@
 <meta property="og:description" content="Catch cards, open packs, battle with elements, climb the leaderboards.">
 <meta property="og:image" content="https://open-bricks.site/assets/icon-512.png">
 <link rel="preload" href="assets/fonts/ndr.otf" as="font" type="font/otf" crossorigin>
-<link rel="stylesheet" href="assets/style.css?v=20261110c">
+<link rel="stylesheet" href="assets/style.css?v=20261110d">
 <script>document.documentElement.classList.add('js');</script>
 </head>
 <body>
@@ -34,17 +34,13 @@
       </div>
     </div>
     <div class="showcase" id="showcase">
-      <div class="stage"><img id="hero-img" src="cards/nrg-7.webp" alt="Garmadon, Original version" width="300" height="414"></div>
+      <div class="stage"><img id="hero-img" alt="" width="300" height="414"></div>
       <div id="hero-pick"></div>
       <p class="cap" id="hero-cap">Move your mouse over the card. Switch versions below it.</p>
     </div>
   </div>
 </section>
 <div class="rstrip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
-
-<section class="feedbar" id="feedbar" hidden>
-  <div class="wrap"><h2>Just pulled</h2><div class="feed" id="feed"></div></div>
-</section>
 
 <section class="section reveal">
   <div class="wrap">
@@ -127,9 +123,9 @@
   </div>
 </section>
 
-<script src="assets/config.js?v=20261110c"></script>
-<script src="assets/common.js?v=20261110c"></script>
-<script src="assets/cardkit.js?v=20261110c"></script>
+<script src="assets/config.js?v=20261110d"></script>
+<script src="assets/common.js?v=20261110d"></script>
+<script src="assets/cardkit.js?v=20261110d"></script>
 <script>
   renderNav('home'); renderFooter(); revealOnScroll();
   $('#invite').href = $('#invite2').href = OB.INVITE;
@@ -201,17 +197,6 @@
     const pick = cards.slice().sort(() => Math.random() - 0.5).slice(0, 8);
     $('#teaser').innerHTML = pick.map((c) => `<a href="cards.html#${encodeURIComponent(c.id)}" title="${esc(c.name)} · ${esc(c.set)}"><img src="${CK.img(c)}" alt="${esc(c.name)}" loading="lazy"></a>`).join('');
   }).catch(() => { $('#demo').hidden = true; });
-
-  // latest special pulls; the bar stays hidden when the API has nothing
-  Promise.all([fetch(OB.API + '/api/feed').then((r) => (r.ok ? r.json() : [])), CK.load()]).then(([rows, cards]) => {
-    const byId = new Map(cards.map((c) => [c.id, c]));
-    const items = rows.filter((r) => byId.has(r.cardId) && CK.VERSION[r.finish]).slice(0, 16).map((r) => {
-      const c = byId.get(r.cardId);
-      const inner = `<img src="${CK.img(c, r.finish)}" alt="" loading="lazy"><span><b>${esc(CK.vName(r.finish))} ${esc(c.name)} ${esc(CK.serial(r.serial, r.finish))}</b>${esc(r.user ? r.user.name : 'A player')} · ${esc(CK.ago(r.at))}</span>`;
-      return r.user ? `<a href="profile.html?u=${encodeURIComponent(r.user.id)}">${inner}</a>` : `<div class="it">${inner}</div>`;
-    });
-    if (items.length) { $('#feed').innerHTML = items.join(''); $('#feedbar').hidden = false; }
-  }).catch(() => {});
 </script>
 </body>
 </html>

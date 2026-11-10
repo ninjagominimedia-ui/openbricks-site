@@ -8,9 +8,14 @@ const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString('en-US'));
 const avatarUrl = (id, hash, size = 64) => (hash ? `https://cdn.discordapp.com/avatars/${id}/${hash}.png?size=${size}` : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(id || 0) >> 22n) % 6}.png`);
 // A saved avatar hash dies when someone changes their Discord picture (the login keeps it 7 days, leaderboards cache it),
 // so a broken avatar falls back to Discord's default one instead of an empty box.
+const freshAvatar = new Map(); // user id -> promise of their current avatar hash (or null)
 document.addEventListener('error', (e) => {
-  const m = e.target.tagName === 'IMG' && /cdn\.discordapp\.com\/avatars\/(\d+)\//.exec(e.target.src);
-  if (m) e.target.src = avatarUrl(m[1], null);
+  const img = e.target;
+  const m = img.tagName === 'IMG' && /cdn\.discordapp\.com\/avatars\/(\d+)\/([^.]+)\./.exec(img.src);
+  if (!m) return;
+  const [, id, dead] = m;
+  if (!freshAvatar.has(id)) freshAvatar.set(id, fetch(`${OB.API}/api/profile/${id}`).then((r) => (r.ok ? r.json() : null)).then((p) => p?.user?.avatar || null).catch(() => null));
+  freshAvatar.get(id).then((hash) => { img.src = avatarUrl(id, hash && hash !== dead ? hash : null, 128); });
 }, true);
 const guildIcon = (id, hash, size = 128) => (hash ? `https://cdn.discordapp.com/icons/${id}/${hash}.png?size=${size}` : '');
 
