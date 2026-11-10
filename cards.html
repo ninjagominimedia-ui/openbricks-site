@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<meta name="theme-color" content="#100f0e">
+<title>Cards — OpenBricks</title>
+<meta name="description" content="Every OpenBricks pack card: all sets, all rarities and all six versions, with how many of each can exist.">
+<link rel="preload" href="assets/fonts/ndr.otf" as="font" type="font/otf" crossorigin>
+<link rel="stylesheet" href="assets/style.css?v=20261110c">
+</head>
+<body>
+<div class="wrap" style="padding-top:34px;padding-bottom:80px">
+  <h1 class="page-title">Cards</h1>
+  <p class="page-sub" id="sub">Every pack card. Click one to see its versions.</p>
+  <div class="filters">
+    <div class="search"><input id="q" type="search" placeholder="Search a name, title or set…" autocomplete="off" aria-label="Search cards"></div>
+    <select id="set" aria-label="Set"><option value="">All sets</option></select>
+    <select id="ver" aria-label="Version shown"><option value="">Show: Original</option></select>
+  </div>
+  <div class="chips" id="rar" role="group" aria-label="Rarity"></div>
+  <div id="grid"><div class="spinner"></div></div>
+</div>
+<script src="assets/config.js?v=20261110c"></script>
+<script src="assets/common.js?v=20261110c"></script>
+<script src="assets/cardkit.js?v=20261110c"></script>
+<script>
+  renderNav('cards'); renderFooter();
+  CK.load().then((cards) => {
+    const byId = new Map(cards.map((c) => [c.id, c]));
+    const sets = [...new Set(cards.map((c) => c.set))];
+    const state = { q: '', set: '', ver: '', rar: new Set() };
+    $('#set').innerHTML += sets.slice().sort((a, b) => a.localeCompare(b)).map((s) => `<option value="${esc(s)}">${esc(s)} (${cards.filter((c) => c.set === s).length})</option>`).join('');
+    $('#ver').innerHTML += CK.ORDER.slice().reverse().map((f) => `<option value="${f}">Show: ${CK.VERSION[f][1]} (${CK.VERSION[f][2]} made)</option>`).join('');
+    const counts = {}; for (const c of cards) counts[CK.tier(c)] = (counts[CK.tier(c)] || 0) + 1;
+    $('#rar').innerHTML = CK.RARITIES.filter((r) => counts[r]).map((r) => `<button type="button" data-r="${r}" aria-pressed="false">${r[0].toUpperCase() + r.slice(1)} ${counts[r]}</button>`).join('');
+
+    const draw = () => {
+      const q = state.q.toLowerCase().trim();
+      const list = cards.filter((c) => (!state.set || c.set === state.set) && (!state.rar.size || state.rar.has(CK.tier(c)))
+        && (!q || `${c.name} ${c.title || ''} ${c.set}`.toLowerCase().includes(q)));
+      $('#sub').textContent = `${list.length} of ${cards.length} cards in ${sets.length} sets. Click one to see its versions.`;
+      if (!list.length) { $('#grid').innerHTML = '<div class="empty">No card matches that. Try fewer filters.</div>'; return; }
+      $('#grid').innerHTML = sets.map((s) => {
+        const part = list.filter((c) => c.set === s);
+        if (!part.length) return '';
+        return `<div class="set-h"><h2>${esc(s)}</h2><span>${part.length} card${part.length === 1 ? '' : 's'}</span></div><div class="cards">${part.map((c) =>
+          `<button type="button" class="tcard r-${CK.tier(c)}" data-card="${esc(c.id)}" aria-label="${esc(c.name)}, ${esc(c.rarity)}, ${esc(c.set)}"><img src="${CK.img(c, state.ver)}" alt="" loading="lazy"><span class="nm">${esc(c.name)}</span></button>`).join('')}</div>`;
+      }).join('');
+    };
+    draw();
+    $('#q').oninput = (e) => { state.q = e.target.value; draw(); };
+    $('#set').onchange = (e) => { state.set = e.target.value; draw(); };
+    $('#ver').onchange = (e) => { state.ver = e.target.value; draw(); };
+    $('#rar').onclick = (e) => {
+      const b = e.target.closest('[data-r]'); if (!b) return;
+      const on = !state.rar.has(b.dataset.r);
+      if (on) state.rar.add(b.dataset.r); else state.rar.delete(b.dataset.r);
+      b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); draw();
+    };
+    // cards.html#<card id> opens that card (links from the home page and from Discord)
+    const open = (id, finish) => { const c = byId.get(id); if (c) { history.replaceState(null, '', '#' + encodeURIComponent(id)); CK.modal(c, null, finish || null); } };
+    $('#grid').onclick = (e) => { const t = e.target.closest('[data-card]'); if (t) open(t.dataset.card, state.ver); };
+    if (location.hash.length > 1) open(decodeURIComponent(location.hash.slice(1)));
+  }).catch(() => { $('#grid').innerHTML = '<div class="empty">Could not load the card list.</div>'; });
+</script>
+</body>
+</html>

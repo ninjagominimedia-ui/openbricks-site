@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0d1017">
 <title>Commands — OpenBricks</title>
 <meta name="description" content="Every OpenBricks command: collecting, packs, battles, economy, games and server tools.">
-<link rel="stylesheet" href="assets/style.css?v=20261109b">
+<link rel="stylesheet" href="assets/style.css?v=20261110c">
 </head>
 <body>
 <div class="wrap layout">
@@ -16,17 +16,26 @@
   <main>
     <h1 class="page-title">Commands</h1>
     <p class="page-sub">Every command uses the <code>!</code> prefix. Some also work as slash commands.</p>
-    <div class="search"><input id="q" type="search" placeholder="Search commands…" autocomplete="off"></div>
+    <h2 class="sub-h" style="margin-top:0">Start with these</h2>
+    <div class="starter" id="starter"></div>
+    <div class="search"><input id="q" type="search" placeholder="Search commands… (press / to jump here)" autocomplete="off" aria-label="Search commands"></div>
+    <p class="page-sub" id="count" style="margin:-10px 0 14px"></p>
     <div id="list"><div class="spinner"></div></div>
   </main>
 </div>
-<script src="assets/config.js?v=20261110b"></script>
-<script src="assets/common.js?v=20261110"></script>
+<script src="assets/config.js?v=20261110c"></script>
+<script src="assets/common.js?v=20261110c"></script>
 <script>
   renderNav('commands'); renderFooter();
   // data/commands.json is made by tools/build-data.js from the bot's help registry
   fetch('data/commands.json').then((r) => r.json()).then((cats) => {
     const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const total = cats.reduce((n, c) => n + c.commands.length, 0);
+    // the handful a new server needs first; clicking one searches for it
+    const START = [['!setspawnchannel', 'Pick the channel where cards drop.'], ['!buypack', 'Open a pack of 10 cards.'], ['!cardinv', 'See your pack cards by set.'],
+      ['!daily', 'Free coins every day.'], ['!battle', 'Fight with a 3-card deck.'], ['!market', 'Buy and sell pack cards.'], ['!sets', 'Set progress and rewards.'], ['!help', 'The full list inside Discord.']];
+    $('#starter').innerHTML = START.map(([c, d]) => `<button type="button" data-q="${c}"><b>${c}</b>${d}</button>`).join('');
+    const copy = (text) => (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => toast(`Copied ${text}`)).catch(() => {});
     $('#cats').innerHTML += cats.map((c) => `<a href="#${slug(c.name)}">${esc(c.name)}<span class="count">${c.commands.length}</span></a>`).join('');
     const draw = (q = '') => {
       q = q.toLowerCase().trim();
@@ -34,12 +43,20 @@
         const list = c.commands.filter((x) => !q || `${x.usage} ${x.desc} ${x.aliases.join(' ')}`.toLowerCase().includes(q));
         if (!list.length) return '';
         return `<div class="cat-title" id="${slug(c.name)}">${esc(c.name)}</div>` + list.map((x) =>
-          `<div class="cmd"><div class="name">${esc(x.usage)}</div><p>${esc(x.desc)}</p>${x.aliases.length ? `<div class="alias">Aliases: ${x.aliases.map((a) => `<code>${esc(a)}</code>`).join(' ')}</div>` : ''}</div>`).join('');
+          `<div class="cmd"><div class="name" title="Click to copy">${esc(x.usage)}</div><p>${esc(x.desc)}</p>${x.aliases.length ? `<div class="alias">Aliases: ${x.aliases.map((a) => `<code>${esc(a)}</code>`).join(' ')}</div>` : ''}</div>`).join('');
       }).join('');
       $('#list').innerHTML = html || '<div class="empty">No command matches that search.</div>';
+      const shown = document.querySelectorAll('#list .cmd').length;
+      $('#count').textContent = q ? `${shown} of ${total} commands match` : `${total} commands. Click a command to copy it.`;
     };
-    draw();
+    // commands.html#q=market opens with that search filled in
+    const first = new URLSearchParams(location.hash.slice(1)).get('q') || '';
+    $('#q').value = first; draw(first);
     $('#q').oninput = (e) => draw(e.target.value);
+    $('#starter').onclick = (e) => { const b = e.target.closest('[data-q]'); if (!b) return; $('#q').value = b.dataset.q; draw(b.dataset.q); $('#q').scrollIntoView({ block: 'start' }); };
+    // click a command to copy the command word (without its <arguments>)
+    $('#list').onclick = (e) => { const n = e.target.closest('.cmd .name'); if (n) copy(n.textContent.trim().split(/\s/)[0]); };
+    document.addEventListener('keydown', (e) => { if (e.key === '/' && document.activeElement !== $('#q')) { e.preventDefault(); $('#q').focus(); } });
   }).catch(() => { $('#list').innerHTML = '<div class="empty">Could not load the command list.</div>'; });
 </script>
 </body>

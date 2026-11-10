@@ -335,3 +335,116 @@ code.secret { display: block; padding: 10px; word-break: break-all; user-select:
 .bmsg a { color: var(--accent2); text-decoration: underline; }
 .botsend { display: flex; gap: 8px; }
 .botsend input { flex: 1; min-width: 0; }
+
+/* ---------- 2026-11-10: motion, card showcase, pack demo, gallery, profiles (still flat: no gradients, no glows) ---------- */
+/* sections fade up once when scrolled into view; only when JS runs (html.js) and motion is welcome */
+@media (prefers-reduced-motion: no-preference) {
+  .js .reveal { opacity: 0; transform: translateY(20px); transition: opacity .5s ease, transform .5s ease; }
+  .js .reveal.in { opacity: 1; transform: none; }
+}
+/* small label above a heading, with the corner bracket from the cards */
+.kicker { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--accent2); }
+.kicker::before { content: ""; width: 12px; height: 12px; border-left: 3px solid var(--accent); border-top: 3px solid var(--accent); flex: none; }
+/* the six rarity colours as one flat strip */
+.rstrip { display: flex; height: 4px; }
+.rstrip i { flex: 1; }
+.rstrip i:nth-child(1) { background: var(--common); } .rstrip i:nth-child(2) { background: var(--uncommon); } .rstrip i:nth-child(3) { background: var(--rare); }
+.rstrip i:nth-child(4) { background: var(--epic); } .rstrip i:nth-child(5) { background: var(--legendary); } .rstrip i:nth-child(6) { background: var(--mythical); }
+.rar { font-weight: 700; }
+.rar.r-common { color: var(--common); } .rar.r-uncommon { color: var(--uncommon); } .rar.r-rare { color: var(--rare); }
+.rar.r-epic { color: var(--epic); } .rar.r-legendary { color: var(--legendary); } .rar.r-mythical { color: var(--mythical); }
+.statline b, .kpi b, .btn.big { font-family: var(--display); font-weight: 400; letter-spacing: .03em; word-spacing: -.32em; }
+.statline b { font-size: 28px; display: block; margin: 0; line-height: 1.1; }
+.statline { gap: 10px 34px; }
+.btn.big { font-size: 19px; }
+.versions-row img, .teaser img { transition: transform .2s; }
+.versions-row figure:hover img, .teaser a:hover img { transform: translateY(-6px); }
+.featlist li { padding-left: 12px; border-left: 3px solid transparent; transition: border-color .15s, background .15s; }
+.featlist li:hover { border-left-color: var(--accent); background: var(--bg2); }
+
+/* hero: one card you can tilt and switch between versions */
+.showcase { display: grid; justify-items: center; gap: 16px; }
+.showcase .stage { width: min(300px, 70vw); aspect-ratio: 620 / 855; transition: transform .12s ease-out; will-change: transform; cursor: grab; }
+.showcase .stage img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; box-shadow: 0 18px 44px rgba(0, 0, 0, .6); }
+.showcase .cap { color: var(--mute); font-size: 14px; text-align: center; min-height: 44px; }
+.showcase .cap b { color: var(--text); }
+.vpick { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.vpick button { background: var(--card); color: var(--mute); border: 1px solid var(--line); border-radius: 4px; padding: 6px 12px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.vpick button:hover { color: var(--text); border-color: var(--line2); }
+.vpick button.on { color: #1a1208; background: var(--accent2); border-color: var(--accent2); }
+.modal .vpick { justify-content: flex-start; }
+.modal .stage { transition: transform .12s ease-out; align-self: start; }
+.modal [data-close] { margin-top: 18px; }
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+
+/* latest pulls */
+.feedbar { border-bottom: 1px solid var(--line); background: var(--bg2); }
+.feedbar .wrap { display: flex; align-items: center; gap: 18px; padding-top: 12px; padding-bottom: 12px; }
+.feedbar h2 { font-family: "Segoe UI", system-ui, sans-serif; font-size: 12px; font-weight: 700; line-height: 1.4; letter-spacing: .14em; word-spacing: normal; text-transform: uppercase; color: var(--accent2); margin: 0; white-space: nowrap; }
+.feed { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
+.feed a, .feed div.it { display: flex; align-items: center; gap: 10px; flex: none; padding: 6px 12px 6px 6px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); font-size: 13px; color: var(--mute); }
+.feed a:hover { border-color: var(--line2); }
+.feed img { width: 34px; height: 47px; object-fit: cover; border-radius: 3px; }
+.feed b { color: var(--text); display: block; font-size: 14px; }
+
+/* pack demo */
+.packdemo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 48px; align-items: start; }
+@media (max-width: 900px) { .packdemo { grid-template-columns: 1fr; gap: 28px; } }
+.odds { margin: 22px 0; border-top: 1px solid var(--line); }
+.odds div { display: grid; grid-template-columns: 96px minmax(0, 1fr) 62px; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.odds .b { height: 6px; background: var(--card2); }
+.odds .b i { display: block; height: 100%; background: currentColor; min-width: 2px; }
+.odds span:last-child { text-align: right; color: var(--mute); font-variant-numeric: tabular-nums; }
+.pack { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; perspective: 1200px; }
+.flip { position: relative; aspect-ratio: 620 / 855; border: 0; padding: 0; background: none; cursor: pointer; transform-style: preserve-3d; transition: transform .45s; border-radius: 8px; }
+.flip.open { transform: rotateY(180deg); }
+.flip .side { position: absolute; inset: 0; border-radius: 8px; overflow: hidden; backface-visibility: hidden; border: 2px solid var(--line2); }
+.flip .back { background: var(--card2); display: grid; place-items: center; }
+.flip .back img { width: 44%; opacity: .5; }
+.flip .front { transform: rotateY(180deg); background: var(--card); }
+.flip .front img { width: 100%; height: 100%; object-fit: cover; }
+.flip .tagv { position: absolute; left: 4px; top: 4px; background: rgba(0, 0, 0, .8); border-radius: 3px; padding: 0 5px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.packsum { min-height: 52px; margin-top: 16px; color: var(--mute); }
+.packsum b { color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .flip { transition: none; } }
+
+/* card row linking to the gallery */
+.teaser { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 12px; margin-bottom: 28px; }
+.teaser img { border-radius: 8px; aspect-ratio: 620 / 855; object-fit: cover; }
+@media (max-width: 900px) { .teaser { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* gallery */
+.filters { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-bottom: 14px; }
+.filters .search { margin: 0; }
+@media (max-width: 760px) { .filters { grid-template-columns: 1fr; } }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 22px; }
+.chips button { background: var(--card); color: var(--mute); border: 1px solid var(--line); border-radius: 999px; padding: 5px 14px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.chips button:hover { color: var(--text); }
+.chips button.on { color: var(--text); border-color: currentColor; }
+.chips button[data-r="common"].on { color: var(--common); } .chips button[data-r="uncommon"].on { color: var(--uncommon); } .chips button[data-r="rare"].on { color: var(--rare); }
+.chips button[data-r="epic"].on { color: var(--epic); } .chips button[data-r="legendary"].on { color: var(--legendary); } .chips button[data-r="mythical"].on { color: var(--mythical); }
+.set-h { display: flex; align-items: baseline; gap: 12px; margin: 30px 0 12px; padding-bottom: 8px; border-bottom: 2px solid var(--line2); }
+.set-h h2 { font-size: 26px; margin: 0; }
+.set-h span { color: var(--mute); font-size: 14px; }
+.tcard { padding: 0; font: inherit; color: inherit; }
+.tcard .nm { position: absolute; left: 0; right: 0; bottom: 0; padding: 6px 8px; background: rgba(0, 0, 0, .78); font-size: 12px; font-weight: 700; text-align: left; opacity: 0; transition: opacity .15s; }
+.tcard:hover .nm, .tcard:focus-visible .nm { opacity: 1; }
+
+/* public profile */
+.phead { display: flex; align-items: center; gap: 20px; margin: 34px 0 6px; flex-wrap: wrap; }
+.phead > img { width: 88px; height: 88px; border-radius: 50%; border: 3px solid var(--line2); }
+.phead h1 { font-size: clamp(34px, 5vw, 52px); margin: 0; overflow-wrap: anywhere; }
+.phead p { margin: 4px 0 0; color: var(--mute); }
+.phead .acts { margin-left: auto; }
+.setrow { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr) 60px; gap: 14px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.setrow .setbar { margin: 0; }
+.setrow span:last-child { text-align: right; color: var(--mute); font-variant-numeric: tabular-nums; }
+.lb a.who:hover, .podium a.name:hover { text-decoration: underline; }
+
+/* commands: the ones to start with + click to copy */
+.starter { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-bottom: 26px; }
+.starter button { text-align: left; background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 4px; padding: 14px 16px; cursor: pointer; color: var(--mute); font: inherit; font-size: 14px; }
+.starter button:hover { border-color: var(--line2); border-left-color: var(--accent-h); }
+.starter b { display: block; font: 600 15px Consolas, "Cascadia Code", monospace; color: var(--accent2); margin-bottom: 4px; }
+.cmd .name { cursor: pointer; }
+.cmd .name:hover { color: var(--text); }

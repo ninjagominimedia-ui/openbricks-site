@@ -521,7 +521,7 @@ function susPage() {
 
 // ---------------------------------------------------------------- collection
 async function collectionPage() {
-  const [mine, cards] = await Promise.all([api('/api/collection'), fetch('data/cards.json').then((r) => r.json()).catch(() => [])]);
+  const [mine, cards, prof] = await Promise.all([api('/api/collection'), fetch('data/cards.json').then((r) => r.json()).catch(() => []), api('/api/profile').catch(() => null)]);
   const byCard = new Map();
   for (const r of mine.cards) { if (!byCard.has(r.cardId)) byCard.set(r.cardId, []); byCard.get(r.cardId).push(r); }
   const total = mine.cards.reduce((s, r) => s + r.n, 0), specials = mine.cards.filter((r) => r.finish).reduce((s, r) => s + r.n, 0);
@@ -532,7 +532,7 @@ async function collectionPage() {
     if (!owned) return `<div class="tcard locked" data-card="${c.id}" title="Not owned yet: click to preview"><img src="${img(c)}" alt="" loading="lazy"></div>`;
     const best = ['ghost', 'shadow', 'gold', 'fullart', 'holo', null].find((f) => owned.some((r) => r.finish === f));
     return `<div class="tcard r-${String(c.rarity).toLowerCase()}" data-card="${c.id}"><img src="${img(c, best)}" alt="${esc(c.name)}" loading="lazy">
-      <div class="badges">${owned.filter((r) => r.finish).map((r) => `<span class="v-${r.finish}">${VERSION[r.finish]?.[0] || ''}</span>`).join('')}</div>
+      <div class="badges">${owned.filter((r) => VERSION[r.finish]).map((r) => `<span class="v-${r.finish}">${VERSION[r.finish][0]}</span>`).join('')}</div>
       <div class="qty">×${owned.reduce((s, r) => s + r.n, 0)}</div></div>`;
   };
   const setHtml = sets.map((s) => {
@@ -549,8 +549,15 @@ async function collectionPage() {
       <div class="kpi"><b>${mine.rank ? mine.rank.rating : '—'}</b><span>Battle rating (${esc(mine.season)})</span></div>
       <div class="kpi"><b>${mine.sleeve ? esc(SLEEVE_NAMES[mine.sleeve] || mine.sleeve) : '—'}</b><span>Equipped sleeve</span></div>
     </div>
+    ${prof ? `<section class="panel"><div class="toggle-row"><div><b>Public profile</b><span class="m">Anyone with the link can see your pack cards, deck and battle rank. Never your coins or servers. <a href="profile.html?u=${Session.user.id}" style="color:var(--accent2);text-decoration:underline">Open my profile</a></span></div>
+      <label class="switch" title="Show my public profile"><input type="checkbox" id="profpub" ${prof.hidden ? '' : 'checked'} aria-label="Show my public profile"><span></span></label></div></section>` : ''}
     ${deck.length ? `<section class="panel"><h3>Battle deck</h3><p class="desc">Change it in Discord with <code>!deck set</code>.</p><div class="cards" style="grid-template-columns:repeat(3,minmax(0,150px))">${deck.map(tile).join('')}</div></section>` : ''}
     ${cards.length ? setHtml : '<div class="empty">The card list isn\'t published yet.</div>'}`);
+  const pub = $('#profpub');
+  if (pub) pub.onchange = async () => {
+    try { const r = await api('/api/profile', { method: 'PUT', body: JSON.stringify({ hidden: !pub.checked }) }); toast(r.hidden ? 'Your profile is hidden now' : 'Your profile is public now'); }
+    catch (e) { pub.checked = !pub.checked; toast(e.message, 'bad'); }
+  };
   app.onclick = (e) => {
     const t = e.target.closest('[data-card]');
     if (!t) return;
@@ -561,8 +568,8 @@ async function collectionPage() {
     m.innerHTML = owned
       ? `<div class="box"><img src="${img(c, owned.find((r) => r.finish)?.finish)}" alt="">
       <div>${head}
-      ${owned.map((r) => `<div class="toggle-row"><div><b>${r.finish ? VERSION[r.finish][1] : 'Original'}</b><span class="m">×${r.n}</span></div>
-        <span class="chip">best #${r.serial ?? '?'}${r.finish ? ` / ${VERSION[r.finish][2]}` : ''}</span></div>`).join('')}
+      ${owned.map((r) => `<div class="toggle-row"><div><b>${r.finish ? esc(VERSION[r.finish]?.[1] || r.finish) : 'Original'}</b><span class="m">×${r.n}</span></div>
+        <span class="chip">best #${r.serial ?? '?'}${VERSION[r.finish] ? ` / ${VERSION[r.finish][2]}` : ''}</span></div>`).join('')}
       <p style="margin-top:16px"><code>!flex ${esc(c.name.toLowerCase())}</code></p></div></div>`
       // not owned yet: a preview of the card and the versions it comes in
       : `<div class="box"><img src="${img(c)}" alt="${esc(c.name)}">

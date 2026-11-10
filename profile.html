@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<meta name="theme-color" content="#100f0e">
+<title>Player — OpenBricks</title>
+<meta name="description" content="An OpenBricks player's card collection, battle deck and rank.">
+<link rel="preload" href="assets/fonts/ndr.otf" as="font" type="font/otf" crossorigin>
+<link rel="stylesheet" href="assets/style.css?v=20261110c">
+</head>
+<body>
+<div class="wrap" id="app" style="padding-bottom:80px"><div class="spinner"></div></div>
+<script src="assets/config.js?v=20261110c"></script>
+<script src="assets/common.js?v=20261110c"></script>
+<script src="assets/cardkit.js?v=20261110c"></script>
+<script>
+  // profile.html?u=<Discord user id>. Shows game data only: pack cards, deck, battle rank, sleeve.
+  renderNav('none'); renderFooter();
+  const app = $('#app');
+  const SLEEVES = { ninja: 'Ninja Black', dragon: 'Dragon Scale', ice: 'Frost', neon: 'Neon Glow', gold: 'Golden Weapon', jade: 'Jade Temple', champion: 'Season Champion' };
+  const uid = new URLSearchParams(location.search).get('u') || Session.user?.id || '';
+  const empty = (title, text) => { app.innerHTML = `<div class="empty" style="margin:60px 0"><h2 style="margin:0 0 8px">${esc(title)}</h2><p style="margin:0">${text}</p></div>`; };
+
+  if (!/^\d{17,20}$/.test(uid)) empty('No player picked', 'Open a profile from the <a href="leaderboards.html" style="text-decoration:underline">leaderboards</a>, or log in to see your own.');
+  else Promise.all([fetch(`${OB.API}/api/profile/${uid}`).then(async (r) => ({ ok: r.ok, status: r.status, body: await r.json().catch(() => ({})) })), CK.load()]).then(([res, cards]) => {
+    if (!res.ok) return empty(res.status === 404 ? 'Nothing to show' : 'Profile unavailable', esc(res.body.error || 'Try again in a minute.'));
+    const p = res.body, byId = new Map(cards.map((c) => [c.id, c]));
+    const owned = new Map(); // cardId -> [{finish, n, serial}]
+    for (const r of p.cards) { if (!byId.has(r.cardId)) continue; if (!owned.has(r.cardId)) owned.set(r.cardId, []); owned.get(r.cardId).push(r); }
+    const rows = [...owned.values()].flat();
+    const total = rows.reduce((s, r) => s + r.n, 0), specials = rows.filter((r) => r.finish).reduce((s, r) => s + r.n, 0);
+    document.title = `${p.user.name} — OpenBricks`;
+    const rank = (f) => { const i = CK.ORDER.indexOf(f); return i < 0 ? 99 : i; };
+    // showcase: special versions first (rarest version, then card rarity, then lowest serial)
+    const best = [...owned].flatMap(([id, list]) => list.filter((r) => CK.VERSION[r.finish]).map((r) => ({ c: byId.get(id), ...r })))
+      .sort((a, b) => rank(a.finish) - rank(b.finish) || CK.RARITIES.indexOf(CK.tier(b.c)) - CK.RARITIES.indexOf(CK.tier(a.c)) || (a.serial ?? 1e9) - (b.serial ?? 1e9)).slice(0, 12);
+    const tile = (c, finish, extra = '') => `<button type="button" class="tcard r-${CK.tier(c)}" data-card="${esc(c.id)}" data-v="${esc(finish || '')}" aria-label="${esc(c.name)}"><img src="${CK.img(c, finish)}" alt="" loading="lazy">${extra}<span class="nm">${esc(c.name)}</span></button>`;
+    const deck = p.deck.map((d) => ({ c: byId.get(d.cardId), finish: d.finish })).filter((d) => d.c && owned.has(d.c.id));
+    const sets = [...new Set(cards.map((c) => c.set))].map((s) => { const list = cards.filter((c) => c.set === s); return { s, n: list.length, got: list.filter((c) => owned.has(c.id)).length }; })
+      .filter((x) => x.got).sort((a, b) => b.got / b.n - a.got / a.n || a.s.localeCompare(b.s));
+    const wl = p.rank ? `${p.rank.wins}W / ${p.rank.losses}L` : 'no ranked battles yet';
+    app.innerHTML = `
+      <div class="phead"><img src="${avatarUrl(p.user.id, p.user.avatar, 128)}" alt="">
+        <div><h1>${esc(p.user.name)}</h1><p>${owned.size} of ${cards.length} cards · ${p.sleeve ? `${esc(SLEEVES[p.sleeve] || p.sleeve)} sleeve` : 'no sleeve'}${Session.user?.id === p.user.id ? ' · this is you' : ''}</p></div>
+        <div class="acts"><button class="btn ghost small" id="share" type="button">Copy link</button></div></div>
+      <div class="kpis">
+        <div class="kpi"><b>${owned.size}</b><span>Unique cards</span></div>
+        <div class="kpi"><b>${fmt(total)}</b><span>Total copies</span></div>
+        <div class="kpi"><b>${fmt(specials)}</b><span>Special versions</span></div>
+        <div class="kpi"><b>${fmt(p.setsDone)}</b><span>Sets finished</span></div>
+        <div class="kpi"><b>${p.rank ? fmt(p.rank.rating) : '—'}</b><span>Rating ${esc(p.season)} · ${esc(wl)}</span></div>
+      </div>
+      ${deck.length ? `<section class="panel"><h3>Battle deck</h3><div class="cards" style="grid-template-columns:repeat(3,minmax(0,150px));margin-top:14px">${deck.map((d) => tile(d.c, d.finish)).join('')}</div></section>` : ''}
+      ${best.length ? `<section class="panel"><h3>Best pulls</h3><p class="desc">Special versions, rarest first, with the best serial number owned.</p><div class="cards">${best.map((b) =>
+        tile(b.c, b.finish, `<span class="badges"><span class="v-${b.finish}">${CK.VERSION[b.finish][0]}</span></span><span class="qty">${esc(CK.serial(b.serial, b.finish))}</span>`)).join('')}</div></section>` : ''}
+      <section class="panel"><h3>Sets</h3><p class="desc">${sets.length ? 'How far along each started set is.' : 'No pack cards yet.'}</p>
+        ${sets.map((x) => `<div class="setrow"><b>${esc(x.s)}</b><div class="setbar"><i style="width:${(x.got / x.n) * 100}%"></i></div><span>${x.got}/${x.n}</span></div>`).join('')}</section>
+      <section class="panel"><h3>Collection</h3><p class="desc">Every card this player owns, best version shown.</p>
+        <div class="cards">${[...owned].map(([id, list]) => { const top = list.slice().sort((a, b) => rank(a.finish) - rank(b.finish))[0]; const n = list.reduce((s, r) => s + r.n, 0);
+          return tile(byId.get(id), top.finish, n > 1 ? `<span class="qty">×${fmt(n)}</span>` : ''); }).join('') || '<div class="empty">Nothing here yet.</div>'}</div></section>`;
+    app.onclick = (e) => {
+      const t = e.target.closest('[data-card]');
+      if (t) return CK.modal(byId.get(t.dataset.card), owned.get(t.dataset.card), t.dataset.v || null);
+    };
+    $('#share').onclick = () => {
+      const link = `${location.origin}${location.pathname}?u=${p.user.id}`;
+      (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(() => toast('Profile link copied')).catch(() => prompt('Copy this link:', link));
+    };
+  }).catch(() => empty('Profile unavailable', 'The OpenBricks API did not answer. Try again in a minute.'));
+</script>
+</body>
+</html>

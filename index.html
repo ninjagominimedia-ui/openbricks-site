@@ -10,35 +10,45 @@
 <meta name="description" content="Catch Ninjago cards in your Discord server, open packs, pull rare Holo, Gold and Ghost versions, battle with elements and climb the ranks.">
 <meta property="og:title" content="OpenBricks — Ninjago card bot for Discord">
 <meta property="og:description" content="Catch cards, open packs, battle with elements, climb the leaderboards.">
+<meta property="og:image" content="https://open-bricks.site/assets/icon-512.png">
 <link rel="preload" href="assets/fonts/ndr.otf" as="font" type="font/otf" crossorigin>
-<link rel="stylesheet" href="assets/style.css?v=20261109b">
+<link rel="stylesheet" href="assets/style.css?v=20261110c">
+<script>document.documentElement.classList.add('js');</script>
 </head>
 <body>
 <section class="hero">
   <div class="wrap">
     <div>
+      <p class="kicker">Discord card game</p>
       <h1>Ninjago cards, <em>right in your Discord</em></h1>
       <p>Cards drop while people chat. Whoever types the name first keeps it. There are <span id="s-cards">226</span> cards to find, every one comes in six versions, and some of those versions only exist 25 times.</p>
       <div class="cta">
         <a class="btn primary big" id="invite" target="_blank" rel="noopener">Add to Discord</a>
-        <a class="btn ghost big" href="commands.html">See all commands</a>
+        <a class="btn ghost big" href="cards.html">See every card</a>
       </div>
       <div class="statline">
         <span><b id="s-servers">—</b>servers</span>
         <span><b id="s-players">—</b>players</span>
         <span><b id="s-caught">—</b>cards caught</span>
+        <span><b id="s-packs">—</b>pack cards pulled</span>
       </div>
     </div>
-    <div class="fan" aria-hidden="true">
-      <img src="cards/nrg-5.webp" alt="" width="230" height="317">
-      <img src="cards/nrg-7.webp" alt="" width="230" height="317">
-      <img src="cards/nrg-9.webp" alt="" width="230" height="317">
+    <div class="showcase" id="showcase">
+      <div class="stage"><img id="hero-img" src="cards/nrg-7.webp" alt="Garmadon, Original version" width="300" height="414"></div>
+      <div id="hero-pick"></div>
+      <p class="cap" id="hero-cap">Move your mouse over the card. Switch versions below it.</p>
     </div>
   </div>
 </section>
+<div class="rstrip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
 
-<section class="section">
+<section class="feedbar" id="feedbar" hidden>
+  <div class="wrap"><h2>Just pulled</h2><div class="feed" id="feed"></div></div>
+</section>
+
+<section class="section reveal">
   <div class="wrap">
+    <p class="kicker">Six versions</p>
     <h2>Same Sensei Wu, very different value</h2>
     <p class="lead">Packs can hand you a special version instead of the normal card. Each one is numbered, and once its print run is gone nobody can pull it again.</p>
     <div class="versions-row">
@@ -49,20 +59,38 @@
       <figure><img src="cards/legacy-7-shadow.webp" alt="Sensei Wu, Shadow version" loading="lazy"><figcaption><b>Shadow</b>50 made</figcaption></figure>
       <figure><img src="cards/legacy-7-ghost.webp" alt="Sensei Wu, Ghost version" loading="lazy"><figcaption><b>Ghost</b>25 made</figcaption></figure>
     </div>
-    <p class="note"><b>Ghost cards only drop during a real full moon.</b> Type <code>!moon</code> in Discord to see when the next one is.</p>
+    <p class="note" id="moon"><b>Ghost cards only drop during a real full moon.</b> Type <code>!moon</code> in Discord to see when the next one is.</p>
   </div>
 </section>
 
-<section class="section">
+<section class="section reveal" id="demo">
+  <div class="wrap packdemo">
+    <div>
+      <p class="kicker">Try it</p>
+      <h2>Open a pack right here</h2>
+      <p class="lead" style="margin-bottom:0">Ten cards, the same odds as the bot. This one is only for show: real packs cost 15,000 OBCoins in Discord and go into your collection.</p>
+      <div class="odds" id="odds" aria-label="Chance per card, by rarity"></div>
+      <button class="btn primary big" id="open" type="button">Open a demo pack</button>
+    </div>
+    <div>
+      <div class="pack" id="pack" aria-live="polite"></div>
+      <p class="packsum" id="packsum"></p>
+    </div>
+  </div>
+</section>
+
+<section class="section reveal">
   <div class="wrap twocol">
     <div>
+      <p class="kicker">What you can do</p>
       <h2>More than catching cards</h2>
       <p class="lead">Everything runs on one currency, OBCoins, and one collection, so what you do in one part counts everywhere else.</p>
       <ul class="featlist">
         <li><b>Catching</b><span>Cards spawn in the channel you pick. Type the name before anyone else.</span></li>
-        <li><b>Packs</b><span>10 cards per pack. One in five packs has a guaranteed Full Art.</span></li>
+        <li><b>Packs</b><span>10 cards per pack. One in five packs has a Full Art, and you are guaranteed one at least every 12 packs.</span></li>
+        <li><b>Market</b><span>Sell pack cards to other players for OBCoins. A low serial number is worth more.</span></li>
         <li><b>Battles</b><span>Pick a 3-card deck and fight. Fire beats Ice, Water beats Fire. Monthly ranked seasons with coin prizes.</span></li>
-        <li><b>Sleeves</b><span>Frames for <code>!flex</code>. The Season Champion sleeve only goes to the #1 battler.</span></li>
+        <li><b>Sets</b><span>Finish a set for a one-time reward. Trade up five spare cards for one of the next rarity.</span></li>
         <li><b>Economy</b><span>A bank vault, a rotating shop, loans, trading and a 200k Upgrade Token that turns a normal card into Holo.</span></li>
         <li><b>Games</b><span>Episode, quote and minifigure guessers, quizzes, blackjack, mines and more.</span></li>
         <li><b>Server tools</b><span>Welcome messages, logs, starboard and moderation. Set them up on the dashboard.</span></li>
@@ -79,7 +107,17 @@
   </div>
 </section>
 
-<section class="band">
+<section class="section reveal">
+  <div class="wrap">
+    <p class="kicker">The catalog</p>
+    <h2><span id="t-cards">226</span> cards in <span id="t-sets">40</span> sets</h2>
+    <p class="lead">Every card, every version, with how many of each can exist.</p>
+    <div class="teaser" id="teaser"></div>
+    <a class="btn ghost big" href="cards.html">Browse all cards</a>
+  </div>
+</section>
+
+<section class="band reveal">
   <div class="wrap">
     <div>
       <h2>Free, with no premium tier</h2>
@@ -89,17 +127,91 @@
   </div>
 </section>
 
-<script src="assets/config.js?v=20261110b"></script>
-<script src="assets/common.js?v=20261110"></script>
+<script src="assets/config.js?v=20261110c"></script>
+<script src="assets/common.js?v=20261110c"></script>
+<script src="assets/cardkit.js?v=20261110c"></script>
 <script>
-  renderNav('home'); renderFooter();
+  renderNav('home'); renderFooter(); revealOnScroll();
   $('#invite').href = $('#invite2').href = OB.INVITE;
+
   // live counters from the bot's database (via the Worker); dashes stay if it's offline
   fetch(OB.API + '/api/stats').then((r) => r.json()).then((s) => {
-    const set = (id, v) => { if (v != null) $(id).textContent = fmt(v); };
-    set('#s-servers', s.servers); set('#s-players', s.players); set('#s-caught', s.cardsCaught);
+    countUp($('#s-servers'), s.servers); countUp($('#s-players'), s.players); countUp($('#s-caught'), s.cardsCaught); countUp($('#s-packs'), s.packCards);
   }).catch(() => {});
-  fetch('data/cards.json').then((r) => r.json()).then((c) => { $('#s-cards').textContent = c.length; }).catch(() => {});
+
+  // Ghost cards follow the real moon, so the page can say whether they are dropping right now
+  const day = (ts) => new Date(ts).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  $('#moon').innerHTML = CK.isFullMoon()
+    ? '<b>It is a full moon: Ghost cards are dropping right now.</b> They stop when the moon wanes.'
+    : `<b>Ghost cards only drop during a real full moon.</b> The next one starts around ${esc(day(CK.nextFullMoon()))}. Type <code>!moon</code> in Discord to check.`;
+
+  CK.load().then((cards) => {
+    const sets = new Set(cards.map((c) => c.set));
+    $('#s-cards').textContent = $('#t-cards').textContent = cards.length; $('#t-sets').textContent = sets.size;
+
+    // hero: a legendary or mythical card that has every version; a different one per visit
+    const stars = cards.filter((c) => ['legendary', 'mythical'].includes(CK.tier(c)) && c.versions.length === 5);
+    const star = stars[Math.floor(Math.random() * stars.length)] || cards[0];
+    const heroImg = $('#hero-img'), cap = $('#hero-cap');
+    const say = (f) => {
+      heroImg.alt = `${star.name}, ${CK.vName(f)} version`;
+      cap.innerHTML = `<b>${esc(star.name)}</b> · <span class="rar r-${CK.tier(star)}">${esc(star.rarity)}</span> · ${esc(star.set)}<br>${f ? `${esc(CK.vName(f))}: only ${CK.VERSION[f][2]} will ever exist` : 'Original: the normal card, no print limit'}`;
+    };
+    heroImg.src = CK.img(star); say(null);
+    $('#hero-pick').innerHTML = CK.versionButtons(star, null);
+    CK.wireVersions($('#showcase'), star, heroImg, say);
+    CK.tilt($('#showcase .stage'));
+    // the other versions are fetched ahead so switching doesn't flash
+    for (const f of star.versions) new Image().src = CK.img(star, f);
+
+    // chance per card, straight from the real weights
+    const odds = CK.rarityOdds(cards), top = Math.max(...Object.values(odds));
+    $('#odds').innerHTML = CK.RARITIES.filter((r) => odds[r]).map((r) =>
+      `<div><span class="rar r-${r}">${r[0].toUpperCase() + r.slice(1)}</span><span class="b rar r-${r}"><i style="width:${(odds[r] / top) * 100}%"></i></span><span>${(odds[r] * 100).toFixed(odds[r] < 0.01 ? 2 : 1)}%</span></div>`).join('');
+
+    // pack demo
+    const pack = $('#pack'), sum = $('#packsum'), btn = $('#open');
+    const back = '<span class="side back"><img src="assets/favicon.svg" alt=""></span>';
+    pack.innerHTML = Array.from({ length: CK.PACK_SIZE }, () => `<button class="flip" type="button" disabled aria-label="Face-down card">${back}<span class="side front"></span></button>`).join('');
+    let timers = [];
+    btn.onclick = () => {
+      timers.forEach(clearTimeout); timers = [];
+      const pulled = CK.rollPack(cards);
+      sum.textContent = 'Opening…';
+      pack.innerHTML = pulled.map(({ c, finish }, i) => `<button class="flip" type="button" data-i="${i}" aria-label="Card ${i + 1}, face down">${back}
+        <span class="side front r-${CK.tier(c)}"><img src="${CK.img(c, finish)}" alt="">${finish ? `<span class="tagv v-${finish}">${CK.VERSION[finish][0]}</span>` : ''}</span></button>`).join('');
+      const flips = [...pack.children];
+      const open = (el) => {
+        const { c, finish } = pulled[el.dataset.i];
+        if (el.classList.contains('open')) return CK.modal(c, null, finish); // a second click looks closer
+        el.classList.add('open'); el.setAttribute('aria-label', `${c.name}, ${c.rarity}${finish ? ', ' + CK.vName(finish) : ''}`);
+        if (flips.every((x) => x.classList.contains('open'))) done();
+      };
+      flips.forEach((el, i) => { el.onclick = () => open(el); timers.push(setTimeout(() => { if (!el.classList.contains('open')) open(el); }, CK.calm ? 0 : 500 + i * 260)); });
+      const done = () => {
+        const best = pulled.slice().sort((a, b) => (CK.RARITIES.indexOf(CK.tier(b.c)) - CK.RARITIES.indexOf(CK.tier(a.c))) || ((b.finish ? 1 : 0) - (a.finish ? 1 : 0)))[0];
+        const specials = pulled.filter((p) => p.finish);
+        sum.innerHTML = `Best pull: <b>${esc(best.c.name)}</b> (<span class="rar r-${CK.tier(best.c)}">${esc(best.c.rarity)}</span>). ${specials.length
+          ? `Special versions: <b>${specials.map((p) => `${esc(CK.vName(p.finish))} ${esc(p.c.name)}`).join(', ')}</b>.` : 'No special versions this time. About one pack in five comes up without any.'} Click a card to look closer.`;
+        btn.textContent = 'Open another';
+      };
+    };
+
+    // a row of random cards that leads to the gallery
+    const pick = cards.slice().sort(() => Math.random() - 0.5).slice(0, 8);
+    $('#teaser').innerHTML = pick.map((c) => `<a href="cards.html#${encodeURIComponent(c.id)}" title="${esc(c.name)} · ${esc(c.set)}"><img src="${CK.img(c)}" alt="${esc(c.name)}" loading="lazy"></a>`).join('');
+  }).catch(() => { $('#demo').hidden = true; });
+
+  // latest special pulls; the bar stays hidden when the API has nothing
+  Promise.all([fetch(OB.API + '/api/feed').then((r) => (r.ok ? r.json() : [])), CK.load()]).then(([rows, cards]) => {
+    const byId = new Map(cards.map((c) => [c.id, c]));
+    const items = rows.filter((r) => byId.has(r.cardId) && CK.VERSION[r.finish]).slice(0, 16).map((r) => {
+      const c = byId.get(r.cardId);
+      const inner = `<img src="${CK.img(c, r.finish)}" alt="" loading="lazy"><span><b>${esc(CK.vName(r.finish))} ${esc(c.name)} ${esc(CK.serial(r.serial, r.finish))}</b>${esc(r.user ? r.user.name : 'A player')} · ${esc(CK.ago(r.at))}</span>`;
+      return r.user ? `<a href="profile.html?u=${encodeURIComponent(r.user.id)}">${inner}</a>` : `<div class="it">${inner}</div>`;
+    });
+    if (items.length) { $('#feed').innerHTML = items.join(''); $('#feedbar').hidden = false; }
+  }).catch(() => {});
 </script>
 </body>
 </html>

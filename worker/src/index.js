@@ -23,6 +23,9 @@
 //   GET  /api/collection            -> your pack cards, deck, battle rank, sleeves
 //   GET  /api/leaderboards          -> public top lists
 //   GET  /api/stats                 -> public counters for the home page
+//   GET  /api/feed                  -> public: the latest special-version pulls
+//   GET  /api/profile/:userId       -> public profile: pack cards, deck, battle rank (404 when the player hid it)
+//   GET  /api/profile               -> your own profile settings      PUT /api/profile { hidden } -> hide / show it
 //   POST /votes/topgg, /votes/dbl   -> vote webhooks of top.gg / discordbotlist.com (the bot pays them: growth.js)
 //
 // Secrets (wrangler secret put ...): DISCORD_CLIENT_SECRET, BOT_TOKEN, TURSO_URL, TURSO_TOKEN, SESSION_SECRET,
@@ -44,10 +47,25 @@ export default {
       if (url.pathname === '/purge/confirm') return await purgeConfirm(env, req, url);
       if (url.pathname === '/api/stats') return json(env, await cached('stats', 300e3, () => publicStats(env)), 300);
       if (url.pathname === '/api/leaderboards') return json(env, await cached('lb', 120e3, () => leaderboards(env)), 120);
+      if (url.pathname === '/api/feed') return json(env, await cached('feed', 60e3, () => feed(env)), 60);
+      const prof = url.pathname.match(/^\/api\/profile\/(\d{17,20})$/);
+      if (prof && req.method === 'GET') {
+        // public and takes any id: cap it per visitor so nobody can make the Worker hammer the database
+        rateLimit(`ip:${req.headers.get('CF-Connecting-IP') || '?'}`, 60);
+        return json(env, await cached(`prof:${prof[1]}`, 60e3, () => profile(env, prof[1])), 60);
+      }
       const vote = url.pathname.match(/^\/votes\/(topgg|dbl)$/);
       if (vote && req.method === 'POST') return await voteHook(env, req, vote[1]);
       const session = await readSession(env, req);
       if (!session) return json(env, { error: 'Not logged in' }, 0, 401);
+      rateLimit(`all:${session.uid}`, 120); // every logged-in request reads the database
+      if (url.pathname === '/api/profile' && req.method === 'GET') return json(env, { hidden: !!(await kvGet(env, `web:hidden:${session.uid}`)) });
+      if (url.pathname === '/api/profile' && req.method === 'PUT') {
+        const hidden = !!(await req.json()).hidden;
+        await kvPut(env, `web:hidden:${session.uid}`, hidden ? 1 : null);
+        memo.delete(`prof:${session.uid}`); memo.delete('feed');
+        return json(env, { hidden });
+      }
       if (url.pathname === '/api/me') return json(env, await me(env, session));
       if (url.pathname === '/api/whoami') return json(env, { admin: await isBotOwner(env, session.uid) }); // no Discord call: cheap
       if (url.pathname === '/api/collection') return json(env, await collection(env, session));
@@ -160,7 +178,11 @@ async function sql(env, stmts, loose = false) {
   if (!res.ok) throw fail(502, `Database ${res.status}`);
   const out = await res.json();
   return out.results.slice(0, stmts.length).map((r) => {
-    if (r.type === 'error') { if (loose) return []; throw fail(500, 'Database: ' + r.error.message); }
+    if (r.type === 'error') {
+      if (loose) return [];
+      console.error('Database:', r.error.message); // shown in the Worker's log, not to the visitor
+      throw Object.assign(fail(500, 'Database error'), { detail: r.error.message });
+    }
     const { cols, rows } = r.response.result;
     return rows.map((row) => Object.fromEntries(cols.map((c, i) => [c.name, row[i].type === 'null' ? null : row[i].type === 'integer' ? Number(row[i].value) : row[i].value])));
   });
@@ -644,7 +666,7 @@ async function adminQueue(env, s, body) {
   if (params.length > 8000) throw fail(400, 'Too long');
   if (action === 'purgebot' && body.params?.op === 'start') throw fail(403, 'A purge needs both owners and the email button: use the purge vote.');
   const [row] = await one(env, 'INSERT INTO web_admin_jobs (adminId, action, params, status, createdAt) VALUES (?,?,?,?,?) RETURNING id',
-    [s.uid, action, params, 'pending', Date.now()]).catch((e) => { throw /no such table/i.test(e.message) ? fail(503, 'The bot hasn\'t started with the admin panel code yet') : e; });
+    [s.uid, action, params, 'pending', Date.now()]).catch((e) => { throw /no such table/i.test(e.detail || e.message) ? fail(503, 'The bot hasn\'t started with the admin panel code yet') : e; });
   return { id: row.id };
 }
 async function adminJob(env, s, id) {
@@ -772,7 +794,7 @@ async function users(env, ids, stored) {
 async function leaderboards(env) {
   const season = new Date().toISOString().slice(0, 7);
   const Q = { // every board in one database round trip
-    collectors: ['SELECT userId, COUNT(DISTINCT cardId) AS unique_cards, COUNT(*) AS total, SUM(finish IS NOT NULL) AS specials FROM pack_cards GROUP BY userId ORDER BY unique_cards DESC, specials DESC LIMIT 25'],
+    collectors: ["SELECT userId, COUNT(DISTINCT cardId) AS unique_cards, COUNT(*) AS total, SUM(finish IS NOT NULL) AS specials FROM pack_cards WHERE userId<>'market' GROUP BY userId ORDER BY unique_cards DESC, specials DESC LIMIT 25"],
     completion: ['SELECT userId, COUNT(DISTINCT cardName) AS unique_cards, SUM(quantity) AS total FROM inventory WHERE quantity>0 GROUP BY userId ORDER BY unique_cards DESC, total DESC LIMIT 25'],
     cards: ['SELECT userId, SUM(quantity) AS total, COUNT(DISTINCT cardName) AS unique_cards FROM inventory WHERE quantity>0 GROUP BY userId ORDER BY total DESC LIMIT 25'],
     catchers: ['SELECT userId, COUNT(*) AS n FROM catches WHERE timestamp>=? GROUP BY userId ORDER BY n DESC LIMIT 25', [Date.now() - 7 * 864e5]],
@@ -807,6 +829,41 @@ async function leaderboards(env) {
   for (const [k, rows] of Object.entries(lists)) out[k] = withUser(rows);
   out.games = Object.fromEntries(Object.entries(games).map(([k, rows]) => [k, withUser(rows)]));
   return out;
+}
+// Latest special-version pulls, newest first. Players who hid their profile show up without a name.
+const FINISH_KEYS = new Set(['holo', 'fullart', 'gold', 'shadow', 'ghost']);
+async function feed(env) {
+  const [rows, kv] = await sql(env, [
+    ["SELECT userId, cardId, finish, serial, obtainedAt FROM pack_cards WHERE finish IS NOT NULL AND userId<>'market' ORDER BY id DESC LIMIT 24"],
+    ["SELECT key, value FROM kv_store WHERE key='web:names' OR key LIKE 'web:hidden:%' OR key LIKE 'nick:%'"],
+  ], true);
+  const parse = (v) => { try { return JSON.parse(v); } catch { return null; } };
+  const kvv = Object.fromEntries(kv.map((r) => [r.key, parse(r.value)]));
+  const list = rows.filter((r) => FINISH_KEYS.has(r.finish) && /^\d{17,20}$/.test(r.userId));
+  const shown = list.filter((r) => !kvv[`web:hidden:${r.userId}`]);
+  const names = await users(env, shown.map((r) => r.userId).slice(0, 12), kvv['web:names'] || {});
+  return list.map((r) => {
+    const hidden = !!kvv[`web:hidden:${r.userId}`];
+    return { cardId: r.cardId, finish: r.finish, serial: r.serial, at: r.obtainedAt,
+      user: hidden ? null : { id: r.userId, name: kvv[`nick:${r.userId}`] || names[r.userId]?.name || 'A player', avatar: names[r.userId]?.avatar ?? null } };
+  });
+}
+// What anyone may see of a player: game data only (cards, deck, rank, sleeve). No coins, servers or activity.
+async function profile(env, uid) {
+  const season = new Date().toISOString().slice(0, 7);
+  const [cards, kv, rank, sets] = await sql(env, [
+    ['SELECT cardId, finish, COUNT(*) AS n, MIN(serial) AS serial FROM pack_cards WHERE userId=? GROUP BY cardId, finish', [uid]],
+    ["SELECT key, value FROM kv_store WHERE key IN (?, ?, ?, ?, 'web:names')", [`deck:${uid}`, `sleeve:${uid}`, `nick:${uid}`, `web:hidden:${uid}`]],
+    ['SELECT rating, wins, losses FROM battle_stats WHERE userId=? AND season=?', [uid, season]],
+    ['SELECT COUNT(*) AS n FROM pack_set_rewards WHERE userId=?', [uid]],
+  ], true);
+  const parse = (v) => { try { return JSON.parse(v); } catch { return null; } };
+  const kvv = Object.fromEntries(kv.map((r) => [r.key.split(':')[0] === 'web' ? r.key : r.key.split(':')[0], parse(r.value)]));
+  if (kvv[`web:hidden:${uid}`]) throw fail(404, 'This profile is private.');
+  if (!cards.length && !rank.length) throw fail(404, 'No OpenBricks player with that id.');
+  const who = (await users(env, [uid], kvv['web:names'] || {}))[uid];
+  return { user: { id: uid, name: (typeof kvv.nick === 'string' && kvv.nick) || who?.name || 'Unknown player', avatar: who?.avatar ?? null },
+    cards, deck: Array.isArray(kvv.deck) ? kvv.deck : [], sleeve: typeof kvv.sleeve === 'string' ? kvv.sleeve : null, rank: rank[0] || null, season, setsDone: sets[0]?.n || 0 };
 }
 async function publicStats(env) {
   const [servers, counts] = await Promise.all([

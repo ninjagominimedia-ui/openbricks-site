@@ -1,5 +1,7 @@
 // Shared bits for every page: header/footer, login session, API calls, small helpers.
 const OB = window.OB_CONFIG;
+// the dashboard can ban and delete: never let another site show these pages inside a frame and trick clicks onto them
+if (window.top !== window.self) { try { window.top.location = window.self.location.href; } catch { document.documentElement.hidden = true; } }
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString('en-US'));
@@ -46,7 +48,7 @@ function renderNav(active) {
   header.className = 'nav';
   header.innerHTML = `<div class="wrap">
     <a class="brand" href="index.html"><img class="logo" src="assets/favicon.svg" alt="" width="34" height="34">OpenBricks</a>
-    <nav class="links" id="navlinks">${link('commands.html', 'Commands', 'commands')}${link('leaderboards.html', 'Leaderboards', 'lb')}${link('dashboard.html', 'Dashboard', 'dash')}${link(OB.SUPPORT, 'Support', '')}<a class="mob-only" href="${OB.INVITE}" target="_blank" rel="noopener">Add to Discord</a></nav>
+    <nav class="links" id="navlinks">${link('cards.html', 'Cards', 'cards')}${link('commands.html', 'Commands', 'commands')}${link('leaderboards.html', 'Leaderboards', 'lb')}${link('dashboard.html', 'Dashboard', 'dash')}${link(OB.SUPPORT, 'Support', '')}<a class="mob-only" href="${OB.INVITE}" target="_blank" rel="noopener">Add to Discord</a></nav>
     <div class="right">
       <a class="btn small ghost desk-only" href="${OB.INVITE}" target="_blank" rel="noopener">Add to Discord</a>
       ${u ? `<div class="me" id="me"><img src="${avatarUrl(u.id, u.avatar)}" alt="">${esc(u.name)}
@@ -70,13 +72,29 @@ function renderNav(active) {
   }
 }
 
+// elements with class "reveal" fade up the first time they scroll into view (style.css keeps them visible without JS)
+function revealOnScroll() {
+  const els = document.querySelectorAll('.reveal');
+  if (!('IntersectionObserver' in window)) { els.forEach((el) => el.classList.add('in')); return; }
+  const io = new IntersectionObserver((list) => list.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -8% 0px' });
+  els.forEach((el) => io.observe(el));
+}
+// counts a number up from 0 once (plain value when motion is off or the number is missing)
+function countUp(el, to, ms = 900) {
+  if (to == null) return;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = fmt(to); return; }
+  const t0 = performance.now();
+  const step = (t) => { const k = Math.min(1, (t - t0) / ms); el.textContent = fmt(Math.round(to * (1 - (1 - k) ** 3))); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+
 function renderFooter() {
   const f = document.createElement('footer');
   f.className = 'footer';
   f.innerHTML = `<div class="wrap">
     <div><a class="brand" href="index.html"><img class="logo" src="assets/favicon.svg" alt="" width="34" height="34">OpenBricks</a><p style="max-width:320px">The Ninjago card collecting bot for Discord. Not affiliated with LEGO or Discord.</p><p>&copy; ${new Date().getFullYear()} OpenBricks</p></div>
     <div class="cols">
-      <div><h4>Bot</h4><a href="${OB.INVITE}" target="_blank" rel="noopener">Add to Discord</a><a href="commands.html">Commands</a><a href="leaderboards.html">Leaderboards</a></div>
+      <div><h4>Bot</h4><a href="${OB.INVITE}" target="_blank" rel="noopener">Add to Discord</a><a href="cards.html">Cards</a><a href="commands.html">Commands</a><a href="leaderboards.html">Leaderboards</a></div>
       <div><h4>Account</h4><a href="dashboard.html">Dashboard</a><a href="dashboard.html#/collection">My collection</a><a href="${OB.SUPPORT}">Support server</a></div>
       <div><h4>Legal</h4><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="mailto:${OB.EMAIL}">Contact</a></div>
     </div></div>`;
