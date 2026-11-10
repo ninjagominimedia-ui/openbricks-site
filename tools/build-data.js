@@ -20,7 +20,8 @@ const THUMB_W = 310; // half size: sharp enough for the collection grid, ~30 KB 
   fs.mkdirSync(path.join(SITE, 'data'), { recursive: true });
   fs.writeFileSync(path.join(SITE, 'data', 'commands.json'), JSON.stringify(commands));
 
-  const packCards = JSON.parse(fs.readFileSync(path.join(BOT, 'data', 'pack-cards.json'), 'utf8'));
+  // same spelling fixes and wiki set order as the bot
+  const packCards = require(path.join(BOT, 'lib', 'packnames.js')).normalize(JSON.parse(fs.readFileSync(path.join(BOT, 'data', 'pack-cards.json'), 'utf8')));
   const cards = [];
   let made = 0;
   fs.mkdirSync(path.join(SITE, 'cards'), { recursive: true });
