@@ -4,6 +4,12 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString('en-US'));
 const avatarUrl = (id, hash, size = 64) => (hash ? `https://cdn.discordapp.com/avatars/${id}/${hash}.png?size=${size}` : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(id || 0) >> 22n) % 6}.png`);
+// A saved avatar hash dies when someone changes their Discord picture (the login keeps it 7 days, leaderboards cache it),
+// so a broken avatar falls back to Discord's default one instead of an empty box.
+document.addEventListener('error', (e) => {
+  const m = e.target.tagName === 'IMG' && /cdn\.discordapp\.com\/avatars\/(\d+)\//.exec(e.target.src);
+  if (m) e.target.src = avatarUrl(m[1], null);
+}, true);
 const guildIcon = (id, hash, size = 128) => (hash ? `https://cdn.discordapp.com/icons/${id}/${hash}.png?size=${size}` : '');
 
 // ---- session: the Worker hands us a signed token after Discord login (dashboard.html#session=...)
