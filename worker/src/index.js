@@ -158,7 +158,8 @@ async function discord(path, auth, init = {}, retry = true) {
     const wait = Number((await res.json().catch(() => ({}))).retry_after) || 1;
     if (wait <= 5) { await new Promise((r) => setTimeout(r, wait * 1000 + 150)); return discord(path, auth, init, false); }
   }
-  if (res.status === 401) throw fail(401, 'Discord login expired, log in again');
+  // a dead bot token is our fault, not the visitor's: don't send them back to the login screen for it
+  if (res.status === 401) throw auth.startsWith('Bot ') ? fail(502, 'The bot token was rejected by Discord (reset?). Tell the bot owner.') : fail(401, 'Discord login expired, log in again');
   if (!res.ok) throw fail(502, `Discord ${res.status} on ${path}`);
   return res.json();
 }
