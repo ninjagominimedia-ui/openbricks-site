@@ -17,6 +17,9 @@ const MODULES = [
   { id: 'welcome', name: 'Welcome', desc: 'Greet new members.', fields: [
     { key: 'welcomeChannel', label: 'Welcome channel', type: 'channel' },
     { key: 'welcomeText', label: 'Message', type: 'text', help: 'Placeholders: {user} {username} {server} {count}' },
+    { key: 'welcomeCard', label: 'Welcome card picture', type: 'toggle', default: true, help: 'Send a picture with the new member\'s profile picture, name and member number.' },
+    { key: 'welcomeColor', label: 'Card colour', type: 'color', default: '#e2a53b', help: 'Border, picture ring and name.' },
+    { key: 'welcomeBg', label: 'Card background', type: 'image', help: 'Any picture works. It is cut to a wide 1100 x 420 strip from the middle, so keep the important part centred. Preview uses your own name.' },
   ] },
   { id: 'goodbye', name: 'Goodbye', desc: 'Say bye when someone leaves.', fields: [
     { key: 'goodbyeChannel', label: 'Goodbye channel', type: 'channel' },
@@ -102,13 +105,20 @@ async function serversPage() {
 async function serverPage(id) {
   const [data, mod, botChans] = await Promise.all([api(`/api/guilds/${id}`), api(`/api/guilds/${id}/mod`).catch(() => null), api(`/api/guilds/${id}/bot`).catch((e) => e)]);
   let saved = { ...data.settings };
+  for (const f of MODULES.flatMap((m) => m.fields)) if ('default' in f) saved[f.key] ??= f.default;
   const icon = guildIcon(id, data.guild.icon);
   const side = `<div class="label">${esc(data.guild.name)}</div>${MODULES.map((m) => `<a href="#/server/${id}" data-jump="${m.id}">${m.name}</a>`).join('')}${mod ? `<a href="#/server/${id}" data-jump="mod">Moderation</a>` : ''}<a href="#/server/${id}" data-jump="bot">Be the bot</a>`;
   const chanOpts = (v) => `<option value="">Disabled</option>${data.channels.map((c) => `<option value="${c.id}" ${c.id === v ? 'selected' : ''}># ${esc(c.name)}</option>`).join('')}`;
   const field = (f) => {
     const v = saved[f.key];
     if (f.type === 'toggle') return `<div class="toggle-row" style="grid-column:1/-1"><div><b>${f.label}</b><span class="m">${f.help || ''}</span></div><label class="switch"><input type="checkbox" data-key="${f.key}" ${v ? 'checked' : ''}><span></span></label></div>`;
+    if (f.type === 'image') return `<div class="field" style="grid-column:1/-1"><label>${f.label}</label>
+      <canvas id="wc-prev" width="1100" height="420" style="width:100%;max-width:620px;display:block"></canvas>
+      <input type="hidden" data-key="${f.key}" value="${esc(v ?? '')}">
+      <div style="display:flex;gap:8px;margin-top:10px"><label class="btn ghost small">Upload picture<input type="file" accept="image/*" id="wc-file" hidden></label>
+      <button type="button" class="btn ghost small" id="wc-default">Use the default picture</button></div><small>${f.help}</small></div>`;
     const input = f.type === 'channel' ? `<select data-key="${f.key}">${chanOpts(v)}</select>`
+      : f.type === 'color' ? `<input type="color" data-key="${f.key}" value="${esc(v ?? '')}" style="height:42px;width:90px;padding:4px">`
       : f.type === 'number' ? `<input type="number" data-key="${f.key}" min="${f.min ?? ''}" max="${f.max ?? ''}" value="${v ?? ''}">`
         : `<textarea data-key="${f.key}" maxlength="1000" placeholder="Default message">${esc(v ?? '')}</textarea>`;
     return `<div class="field" ${f.type === 'text' ? 'style="grid-column:1/-1"' : ''}><label>${f.label}</label>${input}${f.help && f.type !== 'toggle' ? `<small>${f.help}</small>` : ''}</div>`;
@@ -118,6 +128,7 @@ async function serverPage(id) {
   document.querySelectorAll('[data-jump]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); $(`#m-${a.dataset.jump}`).scrollIntoView(); }));
   if (mod) modWire(id, mod);
   if (Array.isArray(botChans)) botWire(id, botChans);
+  welcomeWire(data.guild);
 
   const read = (el) => (el.type === 'checkbox' ? el.checked : el.type === 'number' ? (el.value === '' ? null : Number(el.value)) : el.value || null);
   const changes = () => {
@@ -138,6 +149,77 @@ async function serverPage(id) {
   };
   // closing the tab with unsaved changes asks first
   window.onbeforeunload = () => (Object.keys(changes()).length ? true : undefined);
+}
+
+// ---------------------------------------------------------------- welcome card (same layout as the bot's lib/welcomecard.js: change both)
+const WC_W = 1100, WC_H = 420;
+const loadImg = (src) => new Promise((ok) => { if (!src) return ok(null); const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; });
+function wcFit(ctx, text, max, min, font, maxW) {
+  let px = max;
+  ctx.font = `${px}px ${font}`;
+  while (ctx.measureText(text).width > maxW && px > min) ctx.font = `${(px -= 2)}px ${font}`;
+  while (ctx.measureText(text).width > maxW && text.length > 4) text = text.replace(/(\.\.\.)?$/, '').slice(0, -1) + '...';
+  return [px, text];
+}
+async function drawWelcome(cv, { bg, color, name, avatar, guildName, guildIconUrl, count }) {
+  const ctx = cv.getContext('2d');
+  await document.fonts.load('46px Ndr').catch(() => {});
+  const [bgImg, av, gi] = await Promise.all([loadImg(bg || 'assets/welcome-default.jpg'), loadImg(avatar), loadImg(guildIconUrl)]);
+  const round = () => { ctx.beginPath(); ctx.roundRect(6, 6, WC_W - 12, WC_H - 12, 44); };
+  const outlined = (t, x, y, fill, w) => { ctx.lineJoin = 'round'; ctx.lineWidth = w; ctx.strokeStyle = 'rgba(0,0,0,.88)'; ctx.strokeText(t, x, y); ctx.fillStyle = fill; ctx.fillText(t, x, y); };
+  const circle = (img, cx, cy, r) => { ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(img, cx - r, cy - r, r * 2, r * 2); ctx.restore(); };
+  ctx.clearRect(0, 0, WC_W, WC_H);
+  round(); ctx.save(); ctx.clip();
+  if (bgImg) ctx.drawImage(bgImg, 0, 0, WC_W, WC_H);
+  ctx.fillStyle = 'rgba(0,0,0,.52)'; ctx.fillRect(0, 0, WC_W, WC_H); ctx.restore();
+  round(); ctx.lineWidth = 10; ctx.strokeStyle = color; ctx.stroke();
+  const ax = 205, ay = WC_H / 2, ar = 125;
+  ctx.beginPath(); ctx.arc(ax, ay, ar + 9, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+  if (av) circle(av, ax, ay, ar); else { ctx.beginPath(); ctx.arc(ax, ay, ar, 0, Math.PI * 2); ctx.fillStyle = '#2b2d31'; ctx.fill(); }
+  const tx = 380;
+  ctx.font = '46px Ndr';
+  outlined('WELCOME', tx, 150, '#ffffff', 7);
+  ctx.fillStyle = color; ctx.fillRect(tx, 166, ctx.measureText('WELCOME').width, 6);
+  const [px, nm] = wcFit(ctx, name, 92, 44, 'Ndr', WC_W - tx - 50);
+  outlined(nm, tx, 168 + px + 8, color, 10);
+  const ly = 168 + px + 80, ir = 22;
+  let lx = tx;
+  if (gi) { circle(gi, lx + ir, ly - 12, ir); lx += ir * 2 + 14; }
+  const suffix = `  •  Member #${count.toLocaleString('en-US')}`, sans = '"Noto Sans", system-ui, sans-serif';
+  ctx.font = `32px ${sans}`;
+  const [, gn] = wcFit(ctx, guildName, 32, 32, sans, WC_W - lx - 50 - ctx.measureText(suffix).width);
+  outlined(gn + suffix, lx, ly, '#ffffff', 6);
+}
+// Upload: any picture is cut (cover, centred) to 1100x420 and saved as a JPEG data URL, under the Worker's size limit.
+async function cropToBg(file) {
+  const img = await createImageBitmap(file);
+  const cv = document.createElement('canvas'); cv.width = WC_W; cv.height = WC_H;
+  const s = Math.max(WC_W / img.width, WC_H / img.height), w = WC_W / s, h = WC_H / s;
+  cv.getContext('2d').drawImage(img, (img.width - w) / 2, (img.height - h) / 2, w, h, 0, 0, WC_W, WC_H);
+  for (let q = 0.88; q >= 0.4; q -= 0.12) { const url = cv.toDataURL('image/jpeg', q); if (url.length < 690000) return url; }
+  throw new Error('That picture is too detailed, try another one');
+}
+function welcomeWire(guild) {
+  const cv = $('#wc-prev');
+  if (!cv) return;
+  const bgEl = $('[data-key="welcomeBg"]'), colorEl = $('[data-key="welcomeColor"]'), onEl = $('[data-key="welcomeCard"]');
+  const u = Session.user;
+  const redraw = () => {
+    cv.style.opacity = onEl.checked ? 1 : 0.35;
+    drawWelcome(cv, { bg: bgEl.value, color: colorEl.value || '#e2a53b', name: u.name, avatar: avatarUrl(u.id, u.avatar, 256), guildName: guild.name, guildIconUrl: guildIcon(guild.id, guild.icon, 64), count: 1234 });
+  };
+  const set = (v) => { bgEl.value = v; bgEl.dispatchEvent(new Event('input', { bubbles: true })); redraw(); };
+  $('#wc-file').onchange = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return toast('Pick a picture file', 'bad');
+    try { set(await cropToBg(file)); toast('Picture ready. Press Save to use it.'); } catch (err) { toast(err.message || 'Could not read that picture', 'bad'); }
+  };
+  $('#wc-default').onclick = () => set('');
+  colorEl.addEventListener('input', redraw);
+  onEl.addEventListener('change', redraw);
+  redraw();
 }
 
 // ---------------------------------------------------------------- moderation (the Worker re-checks every permission)

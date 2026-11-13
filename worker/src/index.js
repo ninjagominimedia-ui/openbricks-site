@@ -309,10 +309,23 @@ const CHANNEL_KEYS = ['cardChannel', 'gameChannel', 'welcomeChannel', 'goodbyeCh
 const TEXT_KEYS = { welcomeText: 1000, goodbyeText: 1000 };
 const NUMBER_KEYS = { starThreshold: [1, 100], activityReward: [0, 1000000] };
 const CONFIG_CHANNELS = ['spawnChannelId', 'announcementChannelId'];
+// Welcome card (bot: lib/welcomecard.js). welcomeBg = JPEG data URL the dashboard crops to 1100x420; welcomeCard false = card off.
+const WELCOME_KEYS = ['welcomeCard', 'welcomeBg', 'welcomeColor'];
+const MAX_BG = 700000; // characters of base64, ~510 KB of JPEG
+function welcomeValue(k, v) {
+  if (k === 'welcomeCard') return v === false ? false : null; // stored only when turned off
+  if (v === null || v === '') return null;
+  v = String(v);
+  if (k === 'welcomeColor') { if (!/^#[0-9a-f]{6}$/i.test(v)) throw fail(400, 'Colour must look like #e2a53b'); return v.toLowerCase(); }
+  // '/9j/' = the JPEG start bytes FF D8 FF
+  if (!/^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]+={0,2}$/.test(v)) throw fail(400, 'The picture must be a JPEG');
+  if (v.length > MAX_BG) throw fail(400, 'The picture is too big');
+  return v;
+}
 
 async function guildSettings(env, s, id) {
   const g = await requireManage(env, s, id);
-  const keys = [...CHANNEL_KEYS, ...Object.keys(TEXT_KEYS), ...Object.keys(NUMBER_KEYS), 'ninjagoOnly'];
+  const keys = [...CHANNEL_KEYS, ...Object.keys(TEXT_KEYS), ...Object.keys(NUMBER_KEYS), 'ninjagoOnly', ...WELCOME_KEYS];
   const [cfg, kv] = await sql(env, [
     ['SELECT spawnChannelId, announcementChannelId FROM server_config WHERE guildId=?', [id]],
     [`SELECT key, value FROM kv_store WHERE key IN (${keys.map(() => '?').join(',')})`, keys.map((k) => `guild:${id}:${k}`)],
@@ -346,6 +359,7 @@ async function saveGuild(env, s, id, body) {
     put(k, n);
   }
   if ('ninjagoOnly' in body) put('ninjagoOnly', body.ninjagoOnly ? true : null);
+  for (const k of WELCOME_KEYS) if (k in body) put(k, welcomeValue(k, body[k]));
   if (stmts.length) await sql(env, stmts);
   return { ok: true };
 }
