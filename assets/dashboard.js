@@ -25,9 +25,24 @@ const MODULES = [
     { key: 'goodbyeChannel', label: 'Goodbye channel', type: 'channel' },
     { key: 'goodbyeText', label: 'Message', type: 'text', help: 'Placeholders: {user} {username} {server} {count}' },
   ] },
-  { id: 'logs', name: 'Logging', desc: 'Keep track of what happens.', fields: [
+  { id: 'logs', name: 'Logging', desc: 'Keep track of what happens. Turn off the kinds of logs you don\'t want.', fields: [
     { key: 'logsChannel', label: 'Server log channel', type: 'channel' },
     { key: 'invitesChannel', label: 'Invite log channel', type: 'channel' },
+    // keys match the bot's serverlogs.js LOG_CATS and the Worker's OFF_TOGGLES
+    { key: 'logMessages', label: 'Messages', type: 'toggle', default: true, help: 'Deleted and edited messages (with who deleted them and the attachments), bulk deletes, pins, ghost pings.' },
+    { key: 'logMembers', label: 'Members', type: 'toggle', default: true, help: 'Joins (account age, new-account warning, invite used), leaves (roles they had, how long they stayed), nicknames, avatars, usernames, boosts, rules screening, bots added.' },
+    { key: 'logModeration', label: 'Moderation', type: 'toggle', default: true, help: 'Bans, unbans, kicks, timeouts and voice disconnects made outside the bot, with who did it.' },
+    { key: 'logRoles', label: 'Roles', type: 'toggle', default: true, help: 'Roles created, deleted or changed, and roles given to or taken from members.' },
+    { key: 'logChannels', label: 'Channels and threads', type: 'toggle', default: true, help: 'Channels and threads created, deleted or changed, including permission changes.' },
+    { key: 'logServer', label: 'Server', type: 'toggle', default: true, help: 'Server settings, boost level, webhooks and integrations.' },
+    { key: 'logVoice', label: 'Voice', type: 'toggle', default: true, help: 'Join, leave, move, server mute and deafen, streams and stages.' },
+    { key: 'logInvites', label: 'Invites', type: 'toggle', default: true, help: 'Invites created and deleted.' },
+    { key: 'logEmojis', label: 'Emojis and stickers', type: 'toggle', default: true, help: 'Emojis, stickers and soundboard sounds added, renamed or removed.' },
+    { key: 'logAutomod', label: 'AutoMod', type: 'toggle', default: true, help: 'AutoMod rules changed and messages AutoMod blocked.' },
+    { key: 'logEvents', label: 'Server events', type: 'toggle', default: true, help: 'Scheduled events created, changed, started or cancelled.' },
+  ] },
+  { id: 'sticky', name: 'Sticky roles', desc: 'Members who leave and come back get their roles back, so nobody escapes a jail or mute role by rejoining.', fields: [
+    { key: 'stickyRoles', label: 'Give roles back on rejoin', type: 'toggle', default: true, help: 'Roles with moderator powers (Administrator, Manage Server, Ban, Kick and similar) are never given back automatically.' },
   ] },
   { id: 'star', name: 'Starboard', desc: 'Messages that get enough star reactions are reposted here.', fields: [
     { key: 'starChannel', label: 'Starboard channel', type: 'channel' },

@@ -312,6 +312,8 @@ const CONFIG_CHANNELS = ['spawnChannelId', 'announcementChannelId'];
 // Welcome card (bot: lib/welcomecard.js). welcomeBg = JPEG data URL the dashboard crops to 1100x420; welcomeCard false = card off.
 const WELCOME_KEYS = ['welcomeCard', 'welcomeBg', 'welcomeColor'];
 const MAX_BG = 700000; // characters of base64, ~510 KB of JPEG
+// On unless turned off, so only `false` is stored. Log categories match the bot's serverlogs.js LOG_CATS.
+const OFF_TOGGLES = ['stickyRoles', 'logMessages', 'logMembers', 'logModeration', 'logRoles', 'logChannels', 'logServer', 'logVoice', 'logInvites', 'logEmojis', 'logAutomod', 'logEvents'];
 function welcomeValue(k, v) {
   if (k === 'welcomeCard') return v === false ? false : null; // stored only when turned off
   if (v === null || v === '') return null;
@@ -325,7 +327,7 @@ function welcomeValue(k, v) {
 
 async function guildSettings(env, s, id) {
   const g = await requireManage(env, s, id);
-  const keys = [...CHANNEL_KEYS, ...Object.keys(TEXT_KEYS), ...Object.keys(NUMBER_KEYS), 'ninjagoOnly', ...WELCOME_KEYS];
+  const keys = [...CHANNEL_KEYS, ...Object.keys(TEXT_KEYS), ...Object.keys(NUMBER_KEYS), 'ninjagoOnly', ...WELCOME_KEYS, ...OFF_TOGGLES];
   const [cfg, kv] = await sql(env, [
     ['SELECT spawnChannelId, announcementChannelId FROM server_config WHERE guildId=?', [id]],
     [`SELECT key, value FROM kv_store WHERE key IN (${keys.map(() => '?').join(',')})`, keys.map((k) => `guild:${id}:${k}`)],
@@ -360,6 +362,7 @@ async function saveGuild(env, s, id, body) {
   }
   if ('ninjagoOnly' in body) put('ninjagoOnly', body.ninjagoOnly ? true : null);
   for (const k of WELCOME_KEYS) if (k in body) put(k, welcomeValue(k, body[k]));
+  for (const k of OFF_TOGGLES) if (k in body) put(k, body[k] === false ? false : null);
   if (stmts.length) await sql(env, stmts);
   return { ok: true };
 }
@@ -648,6 +651,10 @@ async function botSend(env, s, id, ch, body) {
   if (!content) throw fail(400, 'Write something first.');
   if (content.length > 2000) throw fail(400, 'Discord messages can be 2000 characters at most.');
   const c = await botChannel(env, s, id, ch, 'send');
+  // limited / blacklisted servers (bot lib/standing.js + lib/blacklist.js) can't use Be the bot
+  const [lim, bl] = await sql(env, [["SELECT value FROM kv_store WHERE key='limits:guilds'"], ["SELECT value FROM kv_store WHERE key='blacklist:guilds'"]]);
+  const has = (r, k) => { try { return !!JSON.parse(r[0]?.value || '{}')[k]; } catch { return false; } };
+  if (has(bl, id) || has(lim, id)) throw fail(403, 'This server is limited by OpenBricks staff, so Be the bot is turned off. Server admins can see why with !status server.');
   const m = await discord(`/channels/${ch}/messages`, botAuth(env), {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content, allowed_mentions: { parse: ['users'] } }), // never @everyone or role pings
@@ -655,6 +662,8 @@ async function botSend(env, s, id, ch, body) {
   // who said what as the bot: shows up in the OpenBricks Client's Activity search
   await sql(env, [['INSERT INTO activity_log (ts, type, userId, name, guildId, channelId, text) VALUES (?,?,?,?,?,?,?)',
     [Date.now(), 'webbot', s.uid, s.name, id, ch, `as bot in #${c.name}: ${content}`.slice(0, 300)]]], true).catch(() => {});
+  // same row the bot's /say saves, so !whosaid / /whosaid work on dashboard messages too
+  await kvPut(env, `say:${m.id}`, { userId: s.uid, guildId: id, channelId: ch, ts: Date.now(), via: 'dashboard' }).catch(() => {});
   return msgOut(m);
 }
 
