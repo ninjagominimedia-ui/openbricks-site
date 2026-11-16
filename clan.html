@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<meta name="theme-color" content="#100f0e">
+<title>Clan — OpenBricks</title>
+<meta name="description" content="An OpenBricks clan: level, members, weekly quests and wars.">
+<link rel="preload" href="assets/fonts/ndr.otf" as="font" type="font/otf" crossorigin>
+<link rel="stylesheet" href="assets/style.css?v=20261110d">
+<style>
+  .banner { width: 100%; max-height: 220px; object-fit: cover; border-radius: 12px; margin: 24px 0 0; display: block; }
+  .quest { margin: 12px 0; }
+  .quest b { display: block; margin-bottom: 4px; }
+  .role { font-size: 12px; color: var(--muted, #a99f92); text-transform: capitalize; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app" style="padding-bottom:80px"><div class="spinner"></div></div>
+<script src="assets/config.js?v=20261110d"></script>
+<script src="assets/common.js?v=20261110d"></script>
+<script>
+  // clan.html?id=<clan id>. Data from the Worker's GET /api/clan/:id.
+  renderNav('none'); renderFooter();
+  const app = $('#app');
+  const id = new URLSearchParams(location.search).get('id') || '';
+  const empty = (title, text) => { app.innerHTML = `<div class="empty" style="margin:60px 0"><h2 style="margin:0 0 8px">${esc(title)}</h2><p style="margin:0">${text}</p></div>`; };
+  const short = (n) => (n >= 1e6 ? +(n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'k' : fmt(n));
+  const date = (ts) => new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  if (!/^\d{1,9}$/.test(id)) empty('No clan picked', 'Open a clan from the <a href="leaderboards.html#clans" style="text-decoration:underline">clan leaderboard</a>.');
+  else fetch(`${OB.API}/api/clan/${id}`).then(async (r) => ({ ok: r.ok, status: r.status, body: await r.json().catch(() => ({})) })).then((res) => {
+    if (!res.ok) return empty(res.status === 404 ? 'Nothing to show' : 'Clan unavailable', esc(res.body.error || 'Try again in a minute.'));
+    const { clan: c, members, quests, stars, wars } = res.body;
+    const title = (c.tag ? `[${c.tag}] ` : '') + c.name;
+    document.title = `${title} — OpenBricks`;
+    const owner = members.find((m) => m.role === 'owner');
+    const warText = (w) => w.status === 'active' ? `vs <b>${esc(w.vs || 'a deleted clan')}</b> · running, ends ${esc(date(w.endAt))}`
+      : `vs <b>${esc(w.vs || 'a deleted clan')}</b> · ${fmt(w.us ?? 0)} : ${fmt(w.them ?? 0)} · ${w.won == null ? 'tie' : w.won ? 'won' : 'lost'}${w.wager ? ` · ${fmt(w.wager * 2)} pot` : ''}`;
+    app.innerHTML = `
+      ${c.banner ? `<img class="banner" src="${esc(c.banner)}" alt="" referrerpolicy="no-referrer">` : ''}
+      <div class="phead"><img src="${avatarUrl(owner?.id || '0', owner?.avatar, 128)}" alt="">
+        <div><h1>${esc(title)}</h1><p>${c.description ? esc(c.description) + ' · ' : ''}${c.open ? 'open to join' : 'invite only'} · founded ${esc(date(c.createdAt))}</p></div>
+        <div class="acts"><button class="btn ghost small" id="share" type="button">Copy link</button></div></div>
+      <div class="kpis">
+        <div class="kpi"><b>${fmt(c.level)}</b><span>Level · ${fmt(c.xp)} XP</span></div>
+        <div class="kpi"><b>${fmt(members.length)}/${fmt(c.capacity)}</b><span>Members</span></div>
+        <div class="kpi"><b>${fmt(c.treasury)}</b><span>Treasury</span></div>
+        <div class="kpi"><b>${fmt(c.wins)}</b><span>Weekly war wins</span></div>
+        <div class="kpi"><b>${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</b><span>Clan chest this week</span></div>
+      </div>
+      <section class="panel"><h3>Weekly quests</h3><p class="desc">Each finished quest adds a star to the clan chest. Every member opens it in Discord with <code>!clan chest</code>.</p>
+        ${quests.map((q) => `<div class="quest setrow"><b>${esc(q.name)}</b><div class="setbar"><i style="width:${Math.min(100, (q.have / Math.max(1, q.need)) * 100)}%"></i></div><span>${short(Math.min(q.have, q.need))}/${short(q.need)}</span></div>`).join('')}</section>
+      <section class="panel"><h3>Members</h3><p class="desc">Ordered by role, then cards caught this week.</p>
+        <table class="lb"><thead><tr><th>Player</th><th>This week</th><th class="hide-sm">Given</th><th class="hide-sm">Joined</th></tr></thead><tbody>
+        ${members.map((m) => `<tr><td><a class="who" href="profile.html?u=${encodeURIComponent(m.id)}"><img src="${avatarUrl(m.id, m.avatar)}" alt="">${esc(m.name)} <span class="role">${esc(m.role)}</span></a></td>
+          <td>${fmt(m.week)} catches</td><td class="hide-sm">${fmt(m.contributed)}</td><td class="hide-sm">${m.joinedAt ? esc(date(m.joinedAt)) : '—'}</td></tr>`).join('')}
+        </tbody></table></section>
+      <section class="panel"><h3>Direct wars</h3><p class="desc">Started in Discord with <code>!clan declarewar &lt;clan&gt;</code>. 48 hours, catches plus ranked battle wins.</p>
+        ${wars.length ? wars.map((w) => `<p style="margin:8px 0">${warText(w)}</p>`).join('') : '<div class="empty">No direct wars yet.</div>'}</section>`;
+    $('#share').onclick = () => {
+      const link = `${location.origin}${location.pathname}?id=${c.id}`;
+      (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(() => toast('Clan link copied')).catch(() => prompt('Copy this link:', link));
+    };
+  }).catch(() => empty('Clan unavailable', 'The OpenBricks API did not answer. Try again in a minute.'));
+</script>
+</body>
+</html>

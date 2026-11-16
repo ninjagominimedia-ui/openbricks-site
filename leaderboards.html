@@ -48,7 +48,7 @@
       cols: [['Wallet', (r) => fmt(r.wallet)], ['Bank', (r) => fmt(r.bank)]], intro: () => 'Most OBCoins in total: wallet plus bank.' },
     sellers: { tab: 'Top sellers', main: (r) => r.n, unit: 'sales', sub: (r) => `${fmt(r.v)} OBCoins earned`,
       cols: [['Earned', (r) => fmt(r.v)]], intro: () => 'Most cards sold on the secondhand market, all time.' },
-    clans: { tab: 'Clans', main: (r) => r.level, unit: 'level', sub: (r) => `${fmt(r.members)} members · ${fmt(r.xp)} XP`, label: (r) => r.name, notYou: true,
+    clans: { tab: 'Clans', main: (r) => r.level, unit: 'level', sub: (r) => `${fmt(r.members)} members · ${fmt(r.xp)} XP`, label: (r) => (r.tag ? '[' + r.tag + '] ' : '') + r.name, link: (r) => 'clan.html?id=' + encodeURIComponent(r.id), notYou: true,
       cols: [['Members', (r) => fmt(r.members)], ['XP', (r) => fmt(r.xp)], ['War wins', (r) => fmt(r.wins)], ['Owner', (r) => esc(r.user?.name || 'Unknown')]],
       intro: () => 'Strongest clans by level, then XP. The picture is the clan owner.' },
   };
@@ -61,7 +61,7 @@
   const podium = (rows, b) => {
     const slot = (r, i) => !r ? '' : `<div class="p ${isMe(r, b) ? 'mine' : ''}" style="--c:${['#e2a53b', '#b9b2a6', '#b8743d'][i]}">
       <div class="rank">${i + 1}</div><img src="${avatarUrl(r.userId, r.user?.avatar, 128)}" alt="">
-      ${b.notYou ? `<div class="name" title="${esc(plain(r, b))}">${name(r, b)}</div>` : `<a class="name" href="profile.html?u=${encodeURIComponent(r.userId)}" title="${esc(plain(r, b))}">${name(r, b)}</a>`}
+      ${b.notYou ? `<${b.link ? `a href="${b.link(r)}"` : "div"} class="name" title="${esc(plain(r, b))}">${name(r, b)}</${b.link ? "a" : "div"}>` : `<a class="name" href="profile.html?u=${encodeURIComponent(r.userId)}" title="${esc(plain(r, b))}">${name(r, b)}</a>`}
       <div class="val">${fmt(b.main(r))}<small>${b.unit}</small></div><div class="sub">${b.sub(r)}</div></div>`;
     return `<div class="podium">${rows.slice(0, 3).map(slot).join('')}</div>`;
   };
@@ -81,7 +81,7 @@
       ${me && !b.notYou ? `<p class="page-sub" style="margin:0 0 14px">${mine >= 0 ? `You're <b>#${mine + 1}</b>${mine > 0 ? ` · ${fmt(b.main(rows[mine - 1]) - b.main(rows[mine]))} behind #${mine}` : ' (top spot)'}` : `You're not in the top ${rows.length} yet.`}</p>` : ''}
       ${rest.length ? `<table class="lb"><thead><tr><th>#</th><th>${b.label ? 'Clan' : 'Player'}</th><th>${b.unit}</th>${b.cols.map(([h]) => `<th class="hide-sm">${h}</th>`).join('')}</tr></thead><tbody>
       ${rest.map((r, i) => `<tr class="${isMe(r, b) ? 'mine' : ''}"><td class="pos">#${i + 4}</td>
-        <td>${b.notYou ? `<div class="who"><img src="${avatarUrl(r.userId, r.user?.avatar)}" alt="">${name(r, b)}</div>` : `<a class="who" href="profile.html?u=${encodeURIComponent(r.userId)}"><img src="${avatarUrl(r.userId, r.user?.avatar)}" alt="">${name(r, b)}</a>`}</td>
+        <td>${b.notYou ? `<${b.link ? `a href="${b.link(r)}"` : "div"} class="who"><img src="${avatarUrl(r.userId, r.user?.avatar)}" alt="">${name(r, b)}</${b.link ? "a" : "div"}>` : `<a class="who" href="profile.html?u=${encodeURIComponent(r.userId)}"><img src="${avatarUrl(r.userId, r.user?.avatar)}" alt="">${name(r, b)}</a>`}</td>
         <td><b>${fmt(b.main(r))}</b><div class="bar"><i style="width:${Math.max(2, (b.main(r) / top) * 100)}%"></i></div></td>
         ${b.cols.map(([, f]) => `<td class="hide-sm">${f(r)}</td>`).join('')}</tr>`).join('')}
       </tbody></table>` : ''}`;

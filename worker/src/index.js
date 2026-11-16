@@ -26,6 +26,7 @@
 //   GET  /api/feed                  -> public: the latest special-version pulls
 //   GET  /api/profile/:userId       -> public profile: pack cards, deck, battle rank (404 when the player hid it)
 //   GET  /api/profile               -> your own profile settings      PUT /api/profile { hidden } -> hide / show it
+//   GET  /api/clan/:id              -> public clan page: info, members, weekly quests, direct wars
 //   POST /votes/topgg, /votes/dbl   -> vote webhooks of top.gg / discordbotlist.com (the bot pays them: growth.js)
 //
 // Secrets (wrangler secret put ...): DISCORD_CLIENT_SECRET, BOT_TOKEN, TURSO_URL, TURSO_TOKEN, SESSION_SECRET,
@@ -53,6 +54,11 @@ export default {
         // public and takes any id: cap it per visitor so nobody can make the Worker hammer the database
         rateLimit(`ip:${req.headers.get('CF-Connecting-IP') || '?'}`, 60);
         return json(env, await cached(`prof:${prof[1]}`, 60e3, () => profile(env, prof[1])), 60);
+      }
+      const clanId = url.pathname.match(/^\/api\/clan\/(\d{1,9})$/);
+      if (clanId && req.method === 'GET') {
+        rateLimit(`ip:${req.headers.get('CF-Connecting-IP') || '?'}`, 60);
+        return json(env, await cached(`clan:${clanId[1]}`, 60e3, () => clanPage(env, Number(clanId[1]))), 60);
       }
       const vote = url.pathname.match(/^\/votes\/(topgg|dbl)$/);
       if (vote && req.method === 'POST') return await voteHook(env, req, vote[1]);
@@ -829,7 +835,7 @@ async function leaderboards(env) {
       FROM (SELECT userId FROM economy UNION SELECT userId FROM bank) u LEFT JOIN economy e ON e.userId=u.userId LEFT JOIN bank b ON b.userId=u.userId) WHERE coins>0 ORDER BY coins DESC LIMIT 25`],
     sellers: ["SELECT sellerId AS userId, COUNT(*) AS n, SUM(price) AS v FROM secondhand WHERE status='sold' GROUP BY sellerId ORDER BY n DESC, v DESC LIMIT 25"],
     games: ['SELECT statKey, userId, wins FROM (SELECT statKey, userId, wins, ROW_NUMBER() OVER (PARTITION BY statKey ORDER BY wins DESC) AS rn FROM game_stats WHERE wins>0) WHERE rn<=10 ORDER BY statKey, wins DESC'],
-    clans: ['SELECT c.name, c.ownerId AS userId, c.level, c.xp, c.wins, COUNT(m.userId) AS members FROM clans c LEFT JOIN clan_members m ON m.clanId=c.id GROUP BY c.id ORDER BY c.level DESC, c.xp DESC LIMIT 25'],
+    clans: ["SELECT c.id, c.name, json_extract(c.settings, '$.tag') AS tag, c.ownerId AS userId, c.level, c.xp, c.wins, COUNT(m.userId) AS members FROM clans c LEFT JOIN clan_members m ON m.clanId=c.id GROUP BY c.id ORDER BY c.level DESC, c.xp DESC LIMIT 25"],
     exam: ["SELECT key, value FROM kv_store WHERE key LIKE 'exam:%'"],
     nicks: ["SELECT key, value FROM kv_store WHERE key LIKE 'nick:%'"],
     names: ["SELECT value FROM kv_store WHERE key='web:names'"],
@@ -871,6 +877,51 @@ async function feed(env) {
     return { cardId: r.cardId, finish: r.finish, serial: r.serial, at: r.obtainedAt,
       user: hidden ? null : { id: r.userId, name: kvv[`nick:${r.userId}`] || names[r.userId]?.name || 'A player', avatar: names[r.userId]?.avatar ?? null } };
   });
+}
+// Same ISO week key and Monday-UTC bounds as the bot (lib/core.js weekKey, clans.js weekBounds).
+function weekKey(ts = Date.now()) {
+  const d = new Date(ts); d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const y = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return `${d.getUTCFullYear()}-W${String(Math.ceil(((d - y) / 864e5 + 1) / 7)).padStart(2, '0')}`;
+}
+const weekStart = (ts = Date.now()) => { const d = new Date(ts); d.setUTCHours(0, 0, 0, 0); return d.getTime() - ((d.getUTCDay() + 6) % 7) * 864e5; };
+const BANNER_HOSTS = ['cdn.discordapp.com', 'media.discordapp.net', 'i.imgur.com'];
+const bannerOk = (u) => { try { const x = new URL(u); return x.protocol === 'https:' && BANNER_HOSTS.includes(x.hostname) && /\.(png|jpe?g|gif|webp)$/i.test(x.pathname); } catch { return false; } };
+// Public clan page (commands/modules/clans.js has the same quest targets: change both).
+// Game data only: no member activity times.
+async function clanPage(env, id) {
+  const wk = weekKey(), from = weekStart();
+  const [clan, mem, caught, pts, dep, duels, names] = await sql(env, [
+    ['SELECT id, name, ownerId, description, treasury, level, xp, wins, createdAt, settings FROM clans WHERE id=?', [id]],
+    ['SELECT userId, role, joinedAt, contributed FROM clan_members WHERE clanId=?', [id]],
+    ['SELECT cm.userId, COUNT(c.rowid) AS n FROM clan_members cm JOIN catches c ON c.userId=cm.userId AND c.timestamp>=? WHERE cm.clanId=? GROUP BY cm.userId', [from, id]],
+    ['SELECT points FROM clan_war_points WHERE weekKey=? AND clanId=?', [wk, id]],
+    ['SELECT deposits FROM clan_weekly WHERE weekKey=? AND clanId=?', [wk, id]],
+    ['SELECT d.a, d.b, d.status, d.scoreA, d.scoreB, d.winner, d.wager, d.endAt, ca.name AS nameA, cb.name AS nameB FROM clan_duels d LEFT JOIN clans ca ON ca.id=d.a LEFT JOIN clans cb ON cb.id=d.b WHERE (d.a=? OR d.b=?) AND d.status IN (\'active\', \'done\') ORDER BY d.id DESC LIMIT 5', [id, id]],
+    ["SELECT value FROM kv_store WHERE key='web:names'"],
+  ], true);
+  const c = clan[0];
+  if (!c) throw fail(404, 'No clan with that id.');
+  let s = {}; try { s = JSON.parse(c.settings || '{}'); } catch {}
+  let stored = {}; try { stored = JSON.parse(names[0]?.value || '{}'); } catch {}
+  const who = await users(env, mem.map((m) => m.userId), stored, 600e3);
+  const week = new Map(caught.map((r) => [r.userId, r.n]));
+  const order = { owner: 0, officer: 1, member: 2 };
+  const n = mem.length;
+  const quests = [
+    { name: 'Catch cards', have: caught.reduce((t, r) => t + r.n, 0), need: Math.max(50, 25 * n) },
+    { name: 'Win ranked battles', have: Math.floor((pts[0]?.points || 0) / 3), need: 5 },
+    { name: 'Fill the treasury', have: dep[0]?.deposits || 0, need: Math.max(250000, 50000 * n) },
+  ];
+  return {
+    clan: { id: c.id, name: c.name, tag: typeof s.tag === 'string' ? s.tag : null, banner: bannerOk(s.banner) ? s.banner : null, open: !!s.open,
+      description: c.description || '', level: c.level, xp: c.xp, wins: c.wins, treasury: c.treasury, createdAt: c.createdAt, capacity: 10 + (c.level - 1) * 5 },
+    members: mem.map((m) => ({ id: m.userId, name: who[m.userId]?.name || 'Unknown player', avatar: who[m.userId]?.avatar ?? null, role: m.role, joinedAt: m.joinedAt, contributed: m.contributed, week: week.get(m.userId) || 0 }))
+      .sort((a, b) => (order[a.role] ?? 3) - (order[b.role] ?? 3) || b.week - a.week),
+    quests, stars: quests.filter((q) => q.have >= q.need).length, week: wk,
+    wars: duels.map((d) => ({ vs: d.a === id ? d.nameB : d.nameA, status: d.status, us: d.a === id ? d.scoreA : d.scoreB, them: d.a === id ? d.scoreB : d.scoreA, won: d.winner == null ? null : d.winner === id, wager: d.wager, endAt: d.endAt })),
+  };
 }
 // What anyone may see of a player: game data only (cards, deck, rank, sleeve). No coins, servers or activity.
 async function profile(env, uid) {
